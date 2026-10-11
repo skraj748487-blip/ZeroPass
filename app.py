@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, jsonify, request, render_template_string, redirect, session
 import uuid
 import os
 import time
@@ -8,7 +8,11 @@ from Crypto.Hash import SHA256
 import sqlite3
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 DB_PATH = 'auth_vault.db'
+
+ADMIN_USER = "admin"
+ADMIN_PASS = "GhostPass@2026"
 
 def init_db_and_keys():
     conn = sqlite3.connect(DB_PATH)
@@ -193,9 +197,61 @@ def dashboard():
     </html>
     """)
 
-# --- Enterprise Admin Control Panel ---
+# --- Admin Authentication Routes ---
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    error = ""
+    if request.method == 'POST':
+        user = request.form.get('username')
+        pwd = request.form.get('password')
+        if user == ADMIN_USER and pwd == ADMIN_PASS:
+            session['admin_logged_in'] = True
+            return redirect('/admin')
+        else:
+            error = "Invalid Master Credentials!"
+            
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Admin Login | Ghost-Pass</title>
+        <style>
+            body { background: #030712; color: #fff; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+            .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 20px; padding: 30px; width: 100%; max-width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); text-align: center; }
+            input { width: 100%; box-sizing: border-box; padding: 12px; margin: 10px 0; background: #1f2937; border: 1px solid #374151; border-radius: 8px; color: #fff; font-size: 14px; }
+            .btn { width: 100%; padding: 12px; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; font-size: 14px; }
+            .error { color: #f87171; font-size: 13px; margin-top: 10px; }
+        </style>
+    </head>
+    <body>
+        <div class="login-card">
+            <h3 style="margin: 0 0 5px; color: #38bdf8;">🛡️ Master Admin Access</h3>
+            <p style="color: #94a3b8; font-size: 13px; margin: 0 0 20px;">Enter credentials to open console</p>
+            <form method="POST">
+                <input type="text" name="username" placeholder="Admin Username" required>
+                <input type="password" name="password" placeholder="Master Password" required>
+                <button type="submit" class="btn">Authenticate Admin</button>
+            </form>
+            {% if error %}
+            <div class="error">{{ error }}</div>
+            {% endif %}
+        </div>
+    </body>
+    </html>
+    """, error=error)
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_logged_in', None)
+    return redirect('/admin/login')
+
+# --- Protected Enterprise Admin Console ---
 @app.route('/admin')
 def admin_panel():
+    if not session.get('admin_logged_in'):
+        return redirect('/admin/login')
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT token, status, user_id, created_at, used FROM sessions ORDER BY created_at DESC LIMIT 10")
@@ -229,7 +285,8 @@ def admin_panel():
             .status-BEACON_ACTIVE { background: #1e3a8a; color: #60a5fa; }
             .status-TERMINATED { background: #450a0a; color: #f87171; }
             .kill-btn { background: #ef4444; color: #fff; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-            .back-btn { background: #1f2937; color: #e2e8f0; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; }
+            .nav-actions { display: flex; gap: 10px; }
+            .btn-action { background: #1f2937; color: #e2e8f0; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; }
         </style>
     </head>
     <body>
@@ -238,7 +295,10 @@ def admin_panel():
                 <h2 style="margin: 0; color: #38bdf8;">🛡️ AirAuth Enterprise Console</h2>
                 <div style="color: #64748b; font-size: 13px; margin-top: 4px;">Live Node Monitoring & Access Control</div>
             </div>
-            <a href="/" class="back-btn">← Back to Radar</a>
+            <div class="nav-actions">
+                <a href="/" class="btn-action">← Radar</a>
+                <a href="/admin/logout" class="btn-action" style="background: #991b1b; color: white;">Logout 🔒</a>
+            </div>
         </div>
 
         <div class="metrics">
@@ -252,7 +312,7 @@ def admin_panel():
             </div>
             <div class="card">
                 <div class="card-title">Shield Engine</div>
-                <div class="card-val" style="font-size: 18px; color: #a78bfa; margin-top: 5px;">RSA-2048 Active</div>
+                <div class="card-val" style="font-size: 18px; color: #a78bfa; margin-top: 5px;">RSA-2048 Protected</div>
             </div>
         </div>
 
@@ -291,13 +351,15 @@ def admin_panel():
 
 @app.route('/admin/kill')
 def admin_kill():
+    if not session.get('admin_logged_in'):
+        return redirect('/admin/login')
     token = request.args.get('token', '')
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE sessions SET status = 'TERMINATED', used = 1 WHERE token = ?", (token,))
     conn.commit()
     conn.close()
-    return "<script>window.location.href='/admin';</script>"
+    return redirect('/admin')
 
 @app.route('/api/create-beacon')
 def create_beacon():
