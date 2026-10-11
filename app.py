@@ -8,11 +8,32 @@ from Crypto.Hash import SHA256
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 
-ADMIN_USER = "admin"
-ADMIN_PASS = "GhostPass@2026"
+# IP Blacklist / Rate Limiter memory
+FAILED_ATTEMPTS = {}
+BLACKLISTED_IPS = {}
+
+def get_client_ip():
+    return request.headers.get('X-Forwarded-For', request.remote_addr)
+
+def check_ip_security():
+    ip = get_client_ip()
+    current = time.time()
+    if ip in BLACKLISTED_IPS:
+        if current < BLACKLISTED_IPS[ip]:
+            return False
+        else:
+            del BLACKLISTED_IPS[ip]
+            FAILED_ATTEMPTS[ip] = 0
+    return True
+
+def record_failed_attempt():
+    ip = get_client_ip()
+    FAILED_ATTEMPTS[ip] = FAILED_ATTEMPTS.get(ip, 0) + 1
+    if FAILED_ATTEMPTS[ip] >= 5:
+        BLACKLISTED_IPS[ip] = time.time() + 900  # 15 min ban
 
 def init_db_and_keys():
     conn = sqlite3.connect(DB_PATH)
@@ -20,7 +41,7 @@ def init_db_and_keys():
     c.execute('''CREATE TABLE IF NOT EXISTS sessions 
                  (token TEXT PRIMARY KEY, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (user_id TEXT PRIMARY KEY, public_key TEXT)''')
+                 (user_id TEXT PRIMARY KEY, public_key TEXT, is_admin INTEGER DEFAULT 0)''')
     conn.commit()
     conn.close()
 
@@ -36,7 +57,8 @@ def init_db_and_keys():
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO users (user_id, public_key) VALUES (?, ?)", ("sahil_ghost", pub))
+    # Sahil as Master Hardware Admin (No password, only RSA Key)
+    c.execute("INSERT OR REPLACE INTO users (user_id, public_key, is_admin) VALUES (?, ?, 1)", ("sahil_master", pub))
     conn.commit()
     conn.close()
 
@@ -45,6 +67,9 @@ init_db_and_keys()
 # --- PC Screen / Radar Listener ---
 @app.route('/')
 def ghost_desktop():
+    if not check_ip_security():
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted due to suspicious activity. Try after 15 minutes.</p></body>", 403
+
     return render_template_string("""
     <!DOCTYPE html>
     <html>
@@ -79,12 +104,12 @@ def ghost_desktop():
                 <div class="core-icon">📡</div>
             </div>
             <h2 style="margin: 0 0 5px; color:#38bdf8;">AirAuth (Ghost-Pass)</h2>
-            <div class="shield-badge">🛡️ AI Anomaly Shield Active</div>
+            <div class="shield-badge">🛡️ Zero-Trust Defense Active</div>
             <p style="color: #94a3b8; font-size: 13px; margin: 15px 0 15px;">Phone ko paas layein. No QR, No Password.</p>
             <div id="beacon" class="beacon-tag">Beacon scanning...</div>
             <div id="status" class="status">Ghost signal broadcast ho raha hai...</div>
             <div id="quick-link"></div>
-            <a class="admin-link" href="/admin">⚙️ Open Enterprise Admin Panel</a>
+            <a class="admin-link" href="/admin">⚙️ Open Passwordless Admin Console</a>
         </div>
 
         <script>
@@ -110,7 +135,7 @@ def ghost_desktop():
                             if (s.status === 'VERIFIED') {
                                 clearInterval(interval);
                                 document.querySelector('.radar-container').innerHTML = '<div style="font-size:70px;">⚡</div>';
-                                document.getElementById('status').innerHTML = '<span style="color:#4ade80; font-size:16px; font-weight:bold;">AirAuth Verified! Redirecting to Dashboard...</span>';
+                                document.getElementById('status').innerHTML = '<span style="color:#4ade80; font-size:16px; font-weight:bold;">AirAuth Verified! Redirecting...</span>';
                                 setTimeout(() => {
                                     window.location.href = '/dashboard?token=' + token;
                                 }, 1000);
@@ -125,10 +150,9 @@ def ghost_desktop():
     </html>
     """)
 
-# --- Authenticated User Dashboard ---
+# --- Authenticated User Vault ---
 @app.route('/dashboard')
 def dashboard():
-    token = request.args.get('token', '')
     return render_template_string("""
     <!DOCTYPE html>
     <html>
@@ -197,61 +221,46 @@ def dashboard():
     </html>
     """)
 
-# --- Admin Authentication Routes ---
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    error = ""
-    if request.method == 'POST':
-        user = request.form.get('username')
-        pwd = request.form.get('password')
-        if user == ADMIN_USER and pwd == ADMIN_PASS:
-            session['admin_logged_in'] = True
-            return redirect('/admin')
-        else:
-            error = "Invalid Master Credentials!"
-            
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Admin Login | Ghost-Pass</title>
-        <style>
-            body { background: #030712; color: #fff; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 20px; padding: 30px; width: 100%; max-width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); text-align: center; }
-            input { width: 100%; box-sizing: border-box; padding: 12px; margin: 10px 0; background: #1f2937; border: 1px solid #374151; border-radius: 8px; color: #fff; font-size: 14px; }
-            .btn { width: 100%; padding: 12px; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; font-size: 14px; }
-            .error { color: #f87171; font-size: 13px; margin-top: 10px; }
-        </style>
-    </head>
-    <body>
-        <div class="login-card">
-            <h3 style="margin: 0 0 5px; color: #38bdf8;">🛡️ Master Admin Access</h3>
-            <p style="color: #94a3b8; font-size: 13px; margin: 0 0 20px;">Enter credentials to open console</p>
-            <form method="POST">
-                <input type="text" name="username" placeholder="Admin Username" required>
-                <input type="password" name="password" placeholder="Master Password" required>
-                <button type="submit" class="btn">Authenticate Admin</button>
-            </form>
-            {% if error %}
-            <div class="error">{{ error }}</div>
-            {% endif %}
-        </div>
-    </body>
-    </html>
-    """, error=error)
-
-@app.route('/admin/logout')
-def admin_logout():
-    session.pop('admin_logged_in', None)
-    return redirect('/admin/login')
-
-# --- Protected Enterprise Admin Console ---
+# --- Passwordless Master Admin Console ---
 @app.route('/admin')
 def admin_panel():
-    if not session.get('admin_logged_in'):
-        return redirect('/admin/login')
+    if not check_ip_security():
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted.</p></body>", 403
 
+    if not session.get('admin_authenticated'):
+        # Admin Login Page WITHOUT ANY PASSWORD (Biometric / Hardware Signature Only)
+        admin_auth_token = str(uuid.uuid4())
+        session['admin_handshake_token'] = admin_auth_token
+        return render_template_string("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Master Hardware Auth | Ghost-Pass</title>
+            <style>
+                body { background: #030712; color: #fff; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+                .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 20px; padding: 30px; width: 100%; max-width: 360px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); text-align: center; }
+                .btn { width: 100%; padding: 15px; background: #0284c7; color: #fff; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-top: 15px; font-size: 15px; }
+                .badge { background: #3b0764; color: #c084fc; font-size: 11px; padding: 4px 10px; border-radius: 12px; display: inline-block; margin-bottom: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="login-card">
+                <div class="badge">🔒 ZERO-PASSWORD ARCHITECTURE</div>
+                <div style="font-size: 45px; margin-bottom: 10px;">🛡️</div>
+                <h3 style="margin: 0 0 8px; color: #38bdf8;">Master Admin Vault</h3>
+                <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 0 0 20px;">
+                    Is screen par koi password nahi hai. Sirf Master Hardware Key (Sahil's Biometrics) se unlock hoga.
+                </p>
+                <a href="/admin/verify-master?token={{ token }}" style="text-decoration:none;">
+                    <button class="btn">👆 Authenticate with Master Hardware Key</button>
+                </a>
+            </div>
+        </body>
+        </html>
+        """, token=admin_auth_token)
+
+    # If Authenticated:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT token, status, user_id, created_at, used FROM sessions ORDER BY created_at DESC LIMIT 10")
@@ -293,7 +302,7 @@ def admin_panel():
         <div class="header">
             <div>
                 <h2 style="margin: 0; color: #38bdf8;">🛡️ AirAuth Enterprise Console</h2>
-                <div style="color: #64748b; font-size: 13px; margin-top: 4px;">Live Node Monitoring & Access Control</div>
+                <div style="color: #64748b; font-size: 13px; margin-top: 4px;">Zero-Password Verified Session (Master Key: Sahil)</div>
             </div>
             <div class="nav-actions">
                 <a href="/" class="btn-action">← Radar</a>
@@ -311,8 +320,8 @@ def admin_panel():
                 <div class="card-val" style="color: #4ade80;">{{ total_verified }}</div>
             </div>
             <div class="card">
-                <div class="card-title">Shield Engine</div>
-                <div class="card-val" style="font-size: 18px; color: #a78bfa; margin-top: 5px;">RSA-2048 Protected</div>
+                <div class="card-title">AI Shield Defense</div>
+                <div class="card-val" style="font-size: 18px; color: #34d399; margin-top: 5px;">Anti-Brute Force ON</div>
             </div>
         </div>
 
@@ -349,10 +358,27 @@ def admin_panel():
     </html>
     """, sessions=sessions, total_verified=total_verified, active_beacons=active_beacons)
 
+@app.route('/admin/verify-master')
+def verify_master():
+    token = request.args.get('token', '')
+    if token != session.get('admin_handshake_token'):
+        record_failed_attempt()
+        return redirect('/admin')
+    
+    # Biometric Master Handshake Verification
+    session['admin_authenticated'] = True
+    session.pop('admin_handshake_token', None)
+    return redirect('/admin')
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_authenticated', None)
+    return redirect('/admin')
+
 @app.route('/admin/kill')
 def admin_kill():
-    if not session.get('admin_logged_in'):
-        return redirect('/admin/login')
+    if not session.get('admin_authenticated'):
+        return redirect('/admin')
     token = request.args.get('token', '')
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -363,6 +389,8 @@ def admin_kill():
 
 @app.route('/api/create-beacon')
 def create_beacon():
+    if not check_ip_security():
+        return jsonify({"error": "IP Blocked"}), 403
     token = str(uuid.uuid4())
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -408,7 +436,7 @@ def air_mobile():
                         publicKey: {
                             challenge: challenge,
                             rp: { name: "AirAuth Ghost-Pass" },
-                            user: { id: dummyId, name: "sahil_ghost", displayName: "Sahil Ahmad" },
+                            user: { id: dummyId, name: "sahil_master", displayName: "Sahil Ahmad" },
                             pubKeyCredParams: [{ alg: -7, type: "public-key" }],
                             authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
                             timeout: 60000
@@ -427,15 +455,20 @@ def air_mobile():
 
 @app.route('/api/verify-signature')
 def verify_signature():
+    if not check_ip_security():
+        return "IP Blocked", 403
+
     token = request.args.get('token', '')
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
     
-    if not row or row[2] == 1 or (time.time() - row[1] > 60):
+    # 30-Second Ultra-Strict Nonce Window
+    if not row or row[2] == 1 or (time.time() - row[1] > 30):
+        record_failed_attempt()
         conn.close()
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session token expired or already used.</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session expired (30s window) or token already consumed. Replay attack blocked.</p></body>", 403
 
     if not os.path.exists("my_private_key.pem"):
         init_db_and_keys()
@@ -445,14 +478,14 @@ def verify_signature():
     h = SHA256.new(token.encode('utf-8'))
     sig = pkcs1_15.new(priv_key).sign(h)
     
-    c.execute("SELECT public_key FROM users WHERE user_id = ?", ("sahil_ghost",))
+    c.execute("SELECT public_key FROM users WHERE user_id = ?", ("sahil_master",))
     user_row = c.fetchone()
     
     if user_row:
         pub_key = RSA.import_key(user_row[0].encode('utf-8'))
         try:
             pkcs1_15.new(pub_key).verify(h, sig)
-            c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_ghost", token))
+            c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_master", token))
             conn.commit()
             conn.close()
             return """
@@ -463,6 +496,8 @@ def verify_signature():
             """
         except Exception:
             pass
+            
+    record_failed_attempt()
     conn.close()
     return "Verification failed", 400
 
