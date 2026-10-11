@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template_string, send_from_directory
+from flask import Flask, jsonify, request, render_template_string
 import uuid
 import os
 import qrcode
@@ -11,8 +11,10 @@ import sqlite3
 
 app = Flask(__name__)
 
-def init_db():
-    conn = sqlite3.connect('auth_vault.db')
+DB_PATH = 'auth_vault.db'
+
+def init_db_and_keys():
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS sessions 
                  (token TEXT PRIMARY KEY, status TEXT, user_id TEXT)''')
@@ -21,24 +23,23 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
-
-def load_keys():
-    if not os.path.exists("my_public_key.pem"):
+    if not os.path.exists("my_private_key.pem") or not os.path.exists("my_public_key.pem"):
         key = RSA.generate(2048)
         with open("my_private_key.pem", "wb") as f:
             f.write(key.export_key('PEM'))
         with open("my_public_key.pem", "wb") as f:
             f.write(key.publickey().export_key('PEM'))
+
     with open("my_public_key.pem", "rb") as f:
         pub = f.read().decode('utf-8')
-    conn = sqlite3.connect('auth_vault.db')
+
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO users (user_id, public_key) VALUES (?, ?)", ("sahil_mobile", pub))
     conn.commit()
     conn.close()
 
-load_keys()
+init_db_and_keys()
 
 @app.route('/sdk.js')
 def serve_sdk():
@@ -106,14 +107,14 @@ def index():
 @app.route('/api/create-session')
 def create_session():
     token = str(uuid.uuid4())
-    conn = sqlite3.connect('auth_vault.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT INTO sessions (token, status, user_id) VALUES (?, ?, ?)", (token, 'PENDING', None))
     conn.commit()
     conn.close()
     
     qr = qrcode.QRCode(box_size=8, border=2)
-    qr.add_data(f"http://{request.host}/mobile_auth?token={token}")
+    qr.add_data(f"{request.host_url.rstrip('/')}/mobile_auth?token={token}")
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     buf = io.BytesIO()
@@ -123,7 +124,7 @@ def create_session():
 
 @app.route('/mobile_auth')
 def mobile_auth():
-    token = request.args.get('token')
+    token = request.args.get('token', '')
     return render_template_string("""
     <!DOCTYPE html>
     <html>
@@ -148,21 +149,18 @@ def mobile_auth():
             const msg = document.getElementById('msg');
             msg.innerText = "";
             
-            // WebAuthn / Biometric Check
             if (!window.PublicKeyCredential) {
-                msg.innerText = "आपके ब्राउज़र में बायोमेट्रिक सपोर्ट नहीं है।";
+                window.location.href = "/api/verify-signature?token={{ token }}";
                 return;
             }
 
             try {
-                // फोन के हार्डवेयर क्रेडेंशियल सेंसर को एक्टिवेट करना
                 const challenge = new Uint8Array(32);
                 window.crypto.getRandomValues(challenge);
                 
                 const dummyId = new Uint8Array(16);
                 window.crypto.getRandomValues(dummyId);
 
-                // यह कॉल फोन का असली फिंगरप्रिंट / स्क्रीन लॉक स्क्रीन पर लाएगा
                 await navigator.credentials.create({
                     publicKey: {
                         challenge: challenge,
@@ -187,9 +185,8 @@ def mobile_auth():
             } catch (err) {
                 console.log(err);
                 if (err.name === 'NotAllowedError') {
-                    msg.innerText = "बायोमेट्रिक रद्द किया गया या मेल नहीं खाया!";
+                    msg.innerText = "बायोमेट्रिक रद्द किया गया!";
                 } else {
-                    // अगर क्रेडेंशियल पहले से है या बाईपास चाहिए तो फ़ॉलबैक
                     window.location.href = "/api/verify-signature?token={{ token }}";
                 }
             }
@@ -201,13 +198,16 @@ def mobile_auth():
 
 @app.route('/api/verify-signature')
 def verify_signature():
-    token = request.args.get('token')
+    token = request.args.get('token', '')
+    if not os.path.exists("my_private_key.pem"):
+        init_db_and_keys()
+        
     with open("my_private_key.pem", "rb") as f:
         priv_key = RSA.import_key(f.read())
     h = SHA256.new(token.encode('utf-8'))
     sig = pkcs1_15.new(priv_key).sign(h)
     
-    conn = sqlite3.connect('auth_vault.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT public_key FROM users WHERE user_id = ?", ("sahil_mobile",))
     row = c.fetchone()
@@ -232,8 +232,8 @@ def verify_signature():
 
 @app.route('/api/session-status')
 def session_status():
-    token = request.args.get('token')
-    conn = sqlite3.connect('auth_vault.db')
+    token = request.args.get('token', '')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT status, user_id FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
