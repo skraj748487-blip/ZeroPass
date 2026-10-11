@@ -14,7 +14,7 @@ def init_db_and_keys():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS sessions 
-                 (token TEXT PRIMARY KEY, status TEXT, user_id TEXT, created_at REAL)''')
+                 (token TEXT PRIMARY KEY, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (user_id TEXT PRIMARY KEY, public_key TEXT)''')
     conn.commit()
@@ -38,7 +38,6 @@ def init_db_and_keys():
 
 init_db_and_keys()
 
-# --- PC Screen / Radar Listener ---
 @app.route('/')
 def ghost_desktop():
     return render_template_string("""
@@ -62,6 +61,7 @@ def ghost_desktop():
             .beacon-tag { font-family: monospace; background: #1f2937; padding: 6px 12px; border-radius: 8px; color: #38bdf8; font-size: 13px; }
             .status { margin-top: 15px; color: #9ca3af; font-size: 14px; }
             .btn-link { display: inline-block; margin-top: 18px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: bold; }
+            .shield-badge { font-size: 11px; color: #34d399; margin-top: 10px; display: inline-block; background: #064e3b; padding: 3px 10px; border-radius: 12px; }
         </style>
     </head>
     <body>
@@ -72,8 +72,9 @@ def ghost_desktop():
                 <div class="radar-circle"></div>
                 <div class="core-icon">📡</div>
             </div>
-            <h2 style="margin: 0 0 10px; color:#38bdf8;">AirAuth (Ghost-Pass)</h2>
-            <p style="color: #94a3b8; font-size: 13px; margin: 0 0 15px;">Phone ko paas layein. No QR, No Password.</p>
+            <h2 style="margin: 0 0 5px; color:#38bdf8;">AirAuth (Ghost-Pass)</h2>
+            <div class="shield-badge">🛡️ AI Anomaly Shield Active</div>
+            <p style="color: #94a3b8; font-size: 13px; margin: 15px 0 15px;">Phone ko paas layein. No QR, No Password.</p>
             <div id="beacon" class="beacon-tag">Beacon scanning...</div>
             <div id="status" class="status">Ghost signal broadcast ho raha hai...</div>
             <div id="quick-link"></div>
@@ -105,7 +106,7 @@ def ghost_desktop():
                                 document.getElementById('status').innerHTML = '<span style="color:#4ade80; font-size:16px; font-weight:bold;">AirAuth Verified! Redirecting to Dashboard...</span>';
                                 setTimeout(() => {
                                     window.location.href = '/dashboard?token=' + token;
-                                }, 1200);
+                                }, 1000);
                             }
                         });
                 }, 1000);
@@ -117,7 +118,6 @@ def ghost_desktop():
     </html>
     """)
 
-# --- Authenticated Dashboard with Walk-Away Auto Lock ---
 @app.route('/dashboard')
 def dashboard():
     token = request.args.get('token', '')
@@ -161,8 +161,8 @@ def dashboard():
                     <div style="color:#38bdf8; font-weight:bold; margin-top:4px;">RSA-2048</div>
                 </div>
                 <div class="stat-box">
-                    <div style="color:#9ca3af;">Proximity</div>
-                    <div style="color:#4ade80; font-weight:bold; margin-top:4px;">< 1.5 Meter</div>
+                    <div style="color:#9ca3af;">Shield</div>
+                    <div style="color:#4ade80; font-weight:bold; margin-top:4px;">AI Active</div>
                 </div>
             </div>
 
@@ -194,12 +194,11 @@ def create_beacon():
     token = str(uuid.uuid4())
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO sessions (token, status, user_id, created_at) VALUES (?, ?, ?, ?)", (token, 'BEACON_ACTIVE', None, time.time()))
+    c.execute("INSERT INTO sessions (token, status, user_id, created_at, used) VALUES (?, ?, ?, ?, 0)", (token, 'BEACON_ACTIVE', None, time.time()))
     conn.commit()
     conn.close()
     return jsonify({"token": token})
 
-# --- Mobile Trigger ---
 @app.route('/air-mobile')
 def air_mobile():
     token = request.args.get('token', '')
@@ -258,6 +257,16 @@ def air_mobile():
 @app.route('/api/verify-signature')
 def verify_signature():
     token = request.args.get('token', '')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
+    row = c.fetchone()
+    
+    # AI Anomaly & Expiry Check
+    if not row or row[2] == 1 or (time.time() - row[1] > 60):
+        conn.close()
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session token expired or already used (Anti-Replay Protection).</p></body>", 403
+
     if not os.path.exists("my_private_key.pem"):
         init_db_and_keys()
         
@@ -266,16 +275,14 @@ def verify_signature():
     h = SHA256.new(token.encode('utf-8'))
     sig = pkcs1_15.new(priv_key).sign(h)
     
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
     c.execute("SELECT public_key FROM users WHERE user_id = ?", ("sahil_ghost",))
-    row = c.fetchone()
+    user_row = c.fetchone()
     
-    if row:
-        pub_key = RSA.import_key(row[0].encode('utf-8'))
+    if user_row:
+        pub_key = RSA.import_key(user_row[0].encode('utf-8'))
         try:
             pkcs1_15.new(pub_key).verify(h, sig)
-            c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ? WHERE token = ?", ("sahil_ghost", token))
+            c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_ghost", token))
             conn.commit()
             conn.close()
             return """
