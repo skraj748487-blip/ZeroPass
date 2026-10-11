@@ -38,6 +38,7 @@ def init_db_and_keys():
 
 init_db_and_keys()
 
+# --- PC Screen / Radar Listener ---
 @app.route('/')
 def ghost_desktop():
     return render_template_string("""
@@ -60,8 +61,9 @@ def ghost_desktop():
             .card { background: #111827; border: 1px solid #1f2937; padding: 30px; border-radius: 20px; text-align: center; max-width: 360px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
             .beacon-tag { font-family: monospace; background: #1f2937; padding: 6px 12px; border-radius: 8px; color: #38bdf8; font-size: 13px; }
             .status { margin-top: 15px; color: #9ca3af; font-size: 14px; }
-            .btn-link { display: inline-block; margin-top: 18px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: bold; }
+            .btn-link { display: inline-block; margin-top: 15px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: bold; }
             .shield-badge { font-size: 11px; color: #34d399; margin-top: 10px; display: inline-block; background: #064e3b; padding: 3px 10px; border-radius: 12px; }
+            .admin-link { display: block; margin-top: 15px; color: #64748b; font-size: 12px; text-decoration: none; }
         </style>
     </head>
     <body>
@@ -78,6 +80,7 @@ def ghost_desktop():
             <div id="beacon" class="beacon-tag">Beacon scanning...</div>
             <div id="status" class="status">Ghost signal broadcast ho raha hai...</div>
             <div id="quick-link"></div>
+            <a class="admin-link" href="/admin">⚙️ Open Enterprise Admin Panel</a>
         </div>
 
         <script>
@@ -118,6 +121,7 @@ def ghost_desktop():
     </html>
     """)
 
+# --- Authenticated User Dashboard ---
 @app.route('/dashboard')
 def dashboard():
     token = request.args.get('token', '')
@@ -189,6 +193,112 @@ def dashboard():
     </html>
     """)
 
+# --- Enterprise Admin Control Panel ---
+@app.route('/admin')
+def admin_panel():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT token, status, user_id, created_at, used FROM sessions ORDER BY created_at DESC LIMIT 10")
+    sessions = c.fetchall()
+    
+    c.execute("SELECT COUNT(*) FROM sessions WHERE status = 'VERIFIED'")
+    total_verified = c.fetchone()[0]
+    
+    c.execute("SELECT COUNT(*) FROM sessions WHERE status = 'BEACON_ACTIVE'")
+    active_beacons = c.fetchone()[0]
+    conn.close()
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AirAuth Enterprise Console</title>
+        <style>
+            body { background: #0b0f17; color: #f8fafc; font-family: -apple-system, sans-serif; margin: 0; padding: 25px; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 20px; }
+            .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 25px 0; }
+            .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 20px; }
+            .card-title { font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
+            .card-val { font-size: 26px; font-weight: bold; color: #38bdf8; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #111827; border-radius: 12px; overflow: hidden; border: 1px solid #1f2937; }
+            th, td { padding: 12px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid #1f2937; }
+            th { background: #1e293b; color: #94a3b8; font-weight: 600; }
+            .status-tag { padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
+            .status-VERIFIED { background: #064e3b; color: #34d399; }
+            .status-BEACON_ACTIVE { background: #1e3a8a; color: #60a5fa; }
+            .status-TERMINATED { background: #450a0a; color: #f87171; }
+            .kill-btn { background: #ef4444; color: #fff; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+            .back-btn { background: #1f2937; color: #e2e8f0; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <div>
+                <h2 style="margin: 0; color: #38bdf8;">🛡️ AirAuth Enterprise Console</h2>
+                <div style="color: #64748b; font-size: 13px; margin-top: 4px;">Live Node Monitoring & Access Control</div>
+            </div>
+            <a href="/" class="back-btn">← Back to Radar</a>
+        </div>
+
+        <div class="metrics">
+            <div class="card">
+                <div class="card-title">Live Beacons</div>
+                <div class="card-val">{{ active_beacons }}</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Verified Logins</div>
+                <div class="card-val" style="color: #4ade80;">{{ total_verified }}</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Shield Engine</div>
+                <div class="card-val" style="font-size: 18px; color: #a78bfa; margin-top: 5px;">RSA-2048 Active</div>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 30px; color: #e2e8f0;">Recent Authentication Sessions</h3>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Beacon Token</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>Shield Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sessions %}
+                    <tr>
+                        <td style="font-family: monospace; color: #94a3b8;">{{ s[0][:12] }}...</td>
+                        <td>{{ s[2] if s[2] else 'Waiting...' }}</td>
+                        <td><span class="status-tag status-{{ s[1] }}">{{ s[1] }}</span></td>
+                        <td>
+                            {% if s[1] != 'TERMINATED' %}
+                            <a href="/admin/kill?token={{ s[0] }}"><button class="kill-btn">Kill Session</button></a>
+                            {% else %}
+                            <span style="color:#64748b; font-size:12px;">Locked</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </body>
+    </html>
+    """, sessions=sessions, total_verified=total_verified, active_beacons=active_beacons)
+
+@app.route('/admin/kill')
+def admin_kill():
+    token = request.args.get('token', '')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE sessions SET status = 'TERMINATED', used = 1 WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()
+    return "<script>window.location.href='/admin';</script>"
+
 @app.route('/api/create-beacon')
 def create_beacon():
     token = str(uuid.uuid4())
@@ -222,7 +332,6 @@ def air_mobile():
             <h2 style="margin: 0 0 10px; color:#38bdf8;">Ghost-Pass Detected</h2>
             <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">Screen ne phone ko hawa mein pehchan liya hai. Ungli lagakar unlock karein.</p>
             <button class="btn" onclick="authorizeAirAuth()">👆 1-Touch Fingerprint</button>
-            <p id="msg" style="margin-top: 15px; font-size: 13px; color: #f87171;"></p>
         </div>
 
         <script>
@@ -262,10 +371,9 @@ def verify_signature():
     c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
     
-    # AI Anomaly & Expiry Check
     if not row or row[2] == 1 or (time.time() - row[1] > 60):
         conn.close()
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session token expired or already used (Anti-Replay Protection).</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session token expired or already used.</p></body>", 403
 
     if not os.path.exists("my_private_key.pem"):
         init_db_and_keys()
