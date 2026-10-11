@@ -38,7 +38,7 @@ def init_db_and_keys():
 
 init_db_and_keys()
 
-# --- PC Screen (Ghost Beacon Listener) ---
+# --- PC Screen / Radar Listener ---
 @app.route('/')
 def ghost_desktop():
     return render_template_string("""
@@ -102,14 +102,88 @@ def ghost_desktop():
                             if (s.status === 'VERIFIED') {
                                 clearInterval(interval);
                                 document.querySelector('.radar-container').innerHTML = '<div style="font-size:70px;">⚡</div>';
-                                document.getElementById('status').innerHTML = '<span style="color:#4ade80; font-size:18px; font-weight:bold;">🎉 AirAuth Success! Login Complete!</span>';
-                                document.getElementById('beacon').innerText = 'User: ' + s.user_id;
+                                document.getElementById('status').innerHTML = '<span style="color:#4ade80; font-size:16px; font-weight:bold;">AirAuth Verified! Redirecting to Dashboard...</span>';
+                                setTimeout(() => {
+                                    window.location.href = '/dashboard?token=' + token;
+                                }, 1200);
                             }
                         });
                 }, 1000);
             }
 
             startBeacon();
+        </script>
+    </body>
+    </html>
+    """)
+
+# --- Authenticated Dashboard with Walk-Away Auto Lock ---
+@app.route('/dashboard')
+def dashboard():
+    token = request.args.get('token', '')
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ZeroPass Secure Vault</title>
+        <style>
+            body { background: #030712; color: #fff; font-family: -apple-system, sans-serif; min-height: 100vh; margin: 0; padding: 25px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+            .dash-card { background: #111827; border: 1px solid #1f2937; border-radius: 24px; padding: 30px; max-width: 420px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+            .tag { display: inline-flex; align-items: center; background: #064e3b; color: #34d399; font-size: 12px; font-weight: bold; padding: 5px 12px; border-radius: 20px; }
+            .pulse { width: 8px; height: 8px; background: #34d399; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 8px #34d399; }
+            .timer-box { background: #1e1b4b; border: 1px solid #4338ca; border-radius: 14px; padding: 15px; margin: 20px 0; text-align: center; }
+            .countdown { font-size: 32px; font-weight: 800; color: #a5b4fc; font-family: monospace; }
+            .action-btn { width: 100%; padding: 14px; background: #ef4444; color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 14px; }
+            .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+            .stat-box { background: #1f2937; padding: 12px; border-radius: 10px; text-align: center; font-size: 13px; }
+        </style>
+    </head>
+    <body>
+        <div class="dash-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="tag"><span class="pulse"></span>SESSION ACTIVE</span>
+                <span style="color:#9ca3af; font-size:12px;">AirAuth v2.0</span>
+            </div>
+            
+            <h2 style="margin: 20px 0 5px; color:#f8fafc;">Welcome, Sahil</h2>
+            <p style="color:#94a3b8; font-size:13px; margin: 0;">Identity verified via RSA-2048 Asymmetric Hardware Key.</p>
+
+            <div class="timer-box">
+                <div style="font-size:12px; color:#c7d2fe; margin-bottom: 5px;">🚶 Walk-Away Auto-Lock Sensor</div>
+                <div id="countdown" class="countdown">15s</div>
+                <div style="font-size:11px; color:#94a3b8; margin-top: 4px;">Phone door hone par screen turant lock hogi</div>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-box">
+                    <div style="color:#9ca3af;">Encryption</div>
+                    <div style="color:#38bdf8; font-weight:bold; margin-top:4px;">RSA-2048</div>
+                </div>
+                <div class="stat-box">
+                    <div style="color:#9ca3af;">Proximity</div>
+                    <div style="color:#4ade80; font-weight:bold; margin-top:4px;">< 1.5 Meter</div>
+                </div>
+            </div>
+
+            <button class="action-btn" style="margin-top:20px;" onclick="triggerLock()">🔒 Walk Away Now (Simulate Lock)</button>
+        </div>
+
+        <script>
+            let timeLeft = 15;
+            const timerEl = document.getElementById('countdown');
+            const countdownInterval = setInterval(() => {
+                timeLeft--;
+                timerEl.innerText = timeLeft + 's';
+                if (timeLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    triggerLock();
+                }
+            }, 1000);
+
+            function triggerLock() {
+                window.location.href = '/?locked=true';
+            }
         </script>
     </body>
     </html>
@@ -125,7 +199,7 @@ def create_beacon():
     conn.close()
     return jsonify({"token": token})
 
-# --- Mobile Side (Ghost Receiver & Biometric Trigger) ---
+# --- Mobile Trigger ---
 @app.route('/air-mobile')
 def air_mobile():
     token = request.args.get('token', '')
@@ -147,15 +221,13 @@ def air_mobile():
             <div style="margin-bottom: 15px;"><span class="pulse-dot"></span><span style="color:#94a3b8; font-size:13px;">Screen In Proximity</span></div>
             <div style="font-size: 45px; margin-bottom: 10px;">👻</div>
             <h2 style="margin: 0 0 10px; color:#38bdf8;">Ghost-Pass Detected</h2>
-            <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">Screen ne phone ko hawa mein pehchan liya hai. Ungli lagakar screen unlock karein.</p>
+            <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">Screen ne phone ko hawa mein pehchan liya hai. Ungli lagakar unlock karein.</p>
             <button class="btn" onclick="authorizeAirAuth()">👆 1-Touch Fingerprint</button>
             <p id="msg" style="margin-top: 15px; font-size: 13px; color: #f87171;"></p>
         </div>
 
         <script>
         async function authorizeAirAuth() {
-            const msg = document.getElementById('msg');
-            msg.innerText = "";
             try {
                 if (window.PublicKeyCredential) {
                     const challenge = new Uint8Array(32);
@@ -209,7 +281,7 @@ def verify_signature():
             return """
             <body style='background:#030712; color:#4ade80; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; font-family:sans-serif;'>
                 <h2>⚡ Signal Transmitted!</h2>
-                <p style='color:#9ca3af;'>Screen hawa mein unlock ho chuki hai. Computer screen dekhein!</p>
+                <p style='color:#9ca3af;'>Screen unlock ho chuki hai. Desktop tab dekhein!</p>
             </body>
             """
         except Exception:
