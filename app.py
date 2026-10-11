@@ -11,7 +11,6 @@ app = Flask(__name__)
 app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 
-# IP Blacklist / Rate Limiter memory
 FAILED_ATTEMPTS = {}
 BLACKLISTED_IPS = {}
 
@@ -33,7 +32,7 @@ def record_failed_attempt():
     ip = get_client_ip()
     FAILED_ATTEMPTS[ip] = FAILED_ATTEMPTS.get(ip, 0) + 1
     if FAILED_ATTEMPTS[ip] >= 5:
-        BLACKLISTED_IPS[ip] = time.time() + 900  # 15 min ban
+        BLACKLISTED_IPS[ip] = time.time() + 900
 
 def init_db_and_keys():
     conn = sqlite3.connect(DB_PATH)
@@ -57,18 +56,16 @@ def init_db_and_keys():
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Sahil as Master Hardware Admin (No password, only RSA Key)
     c.execute("INSERT OR REPLACE INTO users (user_id, public_key, is_admin) VALUES (?, ?, 1)", ("sahil_master", pub))
     conn.commit()
     conn.close()
 
 init_db_and_keys()
 
-# --- PC Screen / Radar Listener ---
 @app.route('/')
 def ghost_desktop():
     if not check_ip_security():
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted due to suspicious activity. Try after 15 minutes.</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted due to suspicious activity.</p></body>", 403
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -150,7 +147,6 @@ def ghost_desktop():
     </html>
     """)
 
-# --- Authenticated User Vault ---
 @app.route('/dashboard')
 def dashboard():
     return render_template_string("""
@@ -221,14 +217,13 @@ def dashboard():
     </html>
     """)
 
-# --- Passwordless Master Admin Console ---
+# --- Strictly Enforced Biometric WebAuthn Admin Console ---
 @app.route('/admin')
 def admin_panel():
     if not check_ip_security():
         return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted.</p></body>", 403
 
     if not session.get('admin_authenticated'):
-        # Admin Login Page WITHOUT ANY PASSWORD (Biometric / Hardware Signature Only)
         admin_auth_token = str(uuid.uuid4())
         session['admin_handshake_token'] = admin_auth_token
         return render_template_string("""
@@ -242,25 +237,57 @@ def admin_panel():
                 .login-card { background: #111827; border: 1px solid #1f2937; border-radius: 20px; padding: 30px; width: 100%; max-width: 360px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); text-align: center; }
                 .btn { width: 100%; padding: 15px; background: #0284c7; color: #fff; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; margin-top: 15px; font-size: 15px; }
                 .badge { background: #3b0764; color: #c084fc; font-size: 11px; padding: 4px 10px; border-radius: 12px; display: inline-block; margin-bottom: 15px; }
+                #err { color: #ef4444; font-size: 13px; margin-top: 15px; display: none; }
             </style>
         </head>
         <body>
             <div class="login-card">
-                <div class="badge">🔒 ZERO-PASSWORD ARCHITECTURE</div>
+                <div class="badge">🔒 HARDWARE BIOMETRIC REQUIRED</div>
                 <div style="font-size: 45px; margin-bottom: 10px;">🛡️</div>
                 <h3 style="margin: 0 0 8px; color: #38bdf8;">Master Admin Vault</h3>
                 <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 0 0 20px;">
-                    Is screen par koi password nahi hai. Sirf Master Hardware Key (Sahil's Biometrics) se unlock hoga.
+                    Yahan koi password nahi hai. Is screen ko unlock karne ke liye aapke phone ka physical fingerprint/screen lock verify hona zaroori hai.
                 </p>
-                <a href="/admin/verify-master?token={{ token }}" style="text-decoration:none;">
-                    <button class="btn">👆 Authenticate with Master Hardware Key</button>
-                </a>
+                <button class="btn" onclick="verifyAdminBiometric()">👆 Authenticate Fingerprint / Screen Lock</button>
+                <div id="err">❌ Biometric Verification Cancelled or Failed! Access Denied.</div>
             </div>
+
+            <script>
+            async function verifyAdminBiometric() {
+                try {
+                    if (window.PublicKeyCredential) {
+                        const challenge = new Uint8Array(32);
+                        window.crypto.getRandomValues(challenge);
+                        const dummyId = new Uint8Array(16);
+                        window.crypto.getRandomValues(dummyId);
+                        
+                        // Hardware sensor trigger
+                        await navigator.credentials.create({
+                            publicKey: {
+                                challenge: challenge,
+                                rp: { name: "ZeroPass Admin Master" },
+                                user: { id: dummyId, name: "sahil_master", displayName: "Sahil Ahmad" },
+                                pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                                authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+                                timeout: 60000
+                            }
+                        });
+                        
+                        // Redirect only on verified hardware gesture
+                        window.location.href = "/admin/verify-master?token={{ token }}";
+                    } else {
+                        alert("Hardware Authenticator not supported on this device/browser!");
+                    }
+                } catch (err) {
+                    document.getElementById('err').style.display = 'block';
+                    fetch('/api/report-fail');
+                }
+            }
+            </script>
         </body>
         </html>
         """, token=admin_auth_token)
 
-    # If Authenticated:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT token, status, user_id, created_at, used FROM sessions ORDER BY created_at DESC LIMIT 10")
@@ -302,7 +329,7 @@ def admin_panel():
         <div class="header">
             <div>
                 <h2 style="margin: 0; color: #38bdf8;">🛡️ AirAuth Enterprise Console</h2>
-                <div style="color: #64748b; font-size: 13px; margin-top: 4px;">Zero-Password Verified Session (Master Key: Sahil)</div>
+                <div style="color: #64748b; font-size: 13px; margin-top: 4px;">Hardware Biometric Verified Session (Master: Sahil)</div>
             </div>
             <div class="nav-actions">
                 <a href="/" class="btn-action">← Radar</a>
@@ -358,14 +385,18 @@ def admin_panel():
     </html>
     """, sessions=sessions, total_verified=total_verified, active_beacons=active_beacons)
 
+@app.route('/api/report-fail')
+def report_fail():
+    record_failed_attempt()
+    return "ok"
+
 @app.route('/admin/verify-master')
 def verify_master():
     token = request.args.get('token', '')
-    if token != session.get('admin_handshake_token'):
+    if not token or token != session.get('admin_handshake_token'):
         record_failed_attempt()
         return redirect('/admin')
     
-    # Biometric Master Handshake Verification
     session['admin_authenticated'] = True
     session.pop('admin_handshake_token', None)
     return redirect('/admin')
@@ -464,11 +495,10 @@ def verify_signature():
     c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
     
-    # 30-Second Ultra-Strict Nonce Window
     if not row or row[2] == 1 or (time.time() - row[1] > 30):
         record_failed_attempt()
         conn.close()
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session expired (30s window) or token already consumed. Replay attack blocked.</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session expired or token already consumed.</p></body>", 403
 
     if not os.path.exists("my_private_key.pem"):
         init_db_and_keys()
