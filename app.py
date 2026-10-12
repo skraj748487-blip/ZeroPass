@@ -34,13 +34,13 @@ def record_failed_attempt():
     if FAILED_ATTEMPTS[ip] >= 5:
         BLACKLISTED_IPS[ip] = time.time() + 900
 
-def init_db_and_keys():
+def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS sessions 
                  (token TEXT PRIMARY KEY, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (user_id TEXT PRIMARY KEY, public_key TEXT, is_admin INTEGER DEFAULT 0)''')
+                 (user_id TEXT PRIMARY KEY, org_name TEXT, public_key TEXT, is_admin INTEGER DEFAULT 0, created_at REAL)''')
     conn.commit()
     conn.close()
 
@@ -56,62 +56,66 @@ def init_db_and_keys():
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO users (user_id, public_key, is_admin) VALUES (?, ?, 1)", ("sahil_master", pub))
+    c.execute("INSERT OR REPLACE INTO users (user_id, org_name, public_key, is_admin, created_at) VALUES (?, ?, ?, 1, ?)", 
+              ("sahil_master", "AirAuth Global Inc.", pub, time.time()))
     conn.commit()
     conn.close()
 
-init_db_and_keys()
+init_db()
 
 @app.route('/')
 def ghost_desktop():
     if not check_ip_security():
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted.</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:monospace; text-align:center; padding:50px;'><h2>⛔ IP DEFENSE SHIELD: BLOCKED</h2></body>", 403
 
     return render_template_string("""
     <!DOCTYPE html>
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Military HUD | Zero-Pass</title>
+        <title>AirAuth Enterprise | Zero-Trust Infrastructure</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <style>
-            body { background: radial-gradient(circle at center, #071326 0%, #020617 100%); color: #38bdf8; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
-            .hud-card { background: rgba(15, 23, 42, 0.85); border: 2px solid #0284c7; padding: 25px; border-radius: 20px; text-align: center; max-width: 420px; width: 100%; box-shadow: 0 0 50px rgba(14, 165, 233, 0.25); position: relative; }
-            .hud-header { font-size: 11px; letter-spacing: 2px; color: #38bdf8; text-transform: uppercase; margin-bottom: 12px; }
-            .qr-wrapper { background: #fff; padding: 10px; border-radius: 12px; display: inline-block; margin: 10px auto; border: 3px solid #38bdf8; }
+            body { background: radial-gradient(circle at 50% 20%, #0d1b2a 0%, #020617 100%); color: #38bdf8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .founder-strip { background: linear-gradient(90deg, #0284c7, #06b6d4); color: #fff; font-size: 11px; font-weight: bold; padding: 6px 14px; border-radius: 20px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 15px; box-shadow: 0 0 15px rgba(2,132,199,0.5); }
+            .hud-card { background: rgba(15, 23, 42, 0.92); border: 2px solid #0ea5e9; padding: 25px; border-radius: 24px; text-align: center; max-width: 440px; width: 100%; box-shadow: 0 0 40px rgba(14, 165, 233, 0.2); }
+            .qr-wrapper { background: #fff; padding: 10px; border-radius: 12px; display: inline-block; margin: 12px auto; border: 3px solid #38bdf8; }
             #qrcode img { display: block; margin: 0 auto; }
-            .hud-metric { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-top: 15px; border-top: 1px dashed #1e293b; padding-top: 10px; }
-            .status-glow { color: #34d399; font-weight: bold; text-shadow: 0 0 10px #34d399; }
-            .btn-link { display: inline-block; margin-top: 15px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: bold; }
-            .nav-box { margin-top: 20px; display: flex; justify-content: space-around; width: 100%; }
-            .nav-link { color: #64748b; font-size: 12px; text-decoration: none; }
+            .metric-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 11px; color: #94a3b8; margin-top: 15px; border-top: 1px dashed #334155; padding-top: 12px; }
+            .metric-item { background: #0f172a; padding: 6px; border-radius: 6px; border: 1px solid #1e293b; }
+            .metric-item div:first-child { color: #64748b; font-size: 9px; text-transform: uppercase; }
+            .metric-item div:last-child { color: #38bdf8; font-weight: bold; margin-top: 2px; }
+            .btn-link { display: inline-block; margin-top: 15px; padding: 12px 20px; background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: bold; box-shadow: 0 4px 12px rgba(2,132,199,0.4); }
+            .nav-box { margin-top: 18px; display: flex; justify-content: space-around; width: 100%; }
+            .nav-link { color: #64748b; font-size: 12px; text-decoration: none; transition: 0.2s; }
             .nav-link:hover { color: #38bdf8; }
         </style>
     </head>
     <body>
+        <div class="founder-strip">⚡ Engineered by Sahil Ahmad // Lead Architect ⚡</div>
         <div class="hud-card" id="mainBox">
-            <div class="hud-header">⚡ Quantum Zero-Pass // Proximity HUD ⚡</div>
-            <h2 style="margin: 0; color: #f8fafc; font-size: 22px;">AirAuth Terminal</h2>
-            <div style="font-size: 12px; color: #34d399; margin: 5px 0;">[ HARDWARE ENCLAVE ENCRYPTED ]</div>
+            <h2 style="margin: 0; color: #f8fafc; font-size: 24px; letter-spacing: -0.5px;">AirAuth Enterprise Terminal</h2>
+            <div style="font-size: 12px; color: #34d399; margin: 6px 0;">[ Zero-Trust RSA-2048 Hardware Binding ]</div>
 
             <div class="qr-wrapper">
                 <div id="qrcode"></div>
             </div>
 
-            <div id="beacon" style="color:#e2e8f0; font-size: 13px;">Proximity Sensor: Searching...</div>
-            <div class="status-glow" id="status" style="margin-top: 5px;">BROADCASTING ZERO-TRUST BEACON</div>
+            <div id="beacon" style="color:#e2e8f0; font-size: 13px; font-family: monospace;">Scanning for Proximity Key...</div>
+            <div style="color: #34d399; font-weight: bold; font-size: 12px; margin-top: 4px;" id="status">BROADCASTING HARDWARE TOKEN</div>
 
-            <div class="hud-metric">
-                <span>FREQ: 2.48 GHz BLE</span>
-                <span>SECURITY: RSA-2048</span>
-                <span>RANGE: &lt; 1.5M</span>
+            <div class="metric-grid">
+                <div class="metric-item"><div>Protocol</div><div>BLE / WebAuthn</div></div>
+                <div class="metric-item"><div>Security</div><div>RSA-2048</div></div>
+                <div class="metric-item"><div>Radius</div><div>&lt; 1.5 Meter</div></div>
             </div>
 
             <div id="quick-link"></div>
 
             <div class="nav-box">
-                <a class="nav-link" href="/sdk-demo">🌐 Universal SDK Demo</a>
-                <a class="nav-link" href="/admin">🏢 Enterprise Fleet View</a>
+                <a class="nav-link" href="/register">➕ Register Org</a>
+                <a class="nav-link" href="/sdk-demo">🌐 Universal SDK</a>
+                <a class="nav-link" href="/admin">🏢 Fleet Control</a>
             </div>
         </div>
 
@@ -144,15 +148,15 @@ def ghost_desktop():
                         document.getElementById('qrcode').innerHTML = "";
                         new QRCode(document.getElementById("qrcode"), {
                             text: mobileUrl,
-                            width: 150,
-                            height: 150,
+                            width: 155,
+                            height: 155,
                             colorDark : "#020617",
                             colorLight : "#ffffff",
                             correctLevel : QRCode.CorrectLevel.M
                         });
 
                         document.getElementById('quick-link').innerHTML = `
-                            <a class="btn-link" href="${mobileUrl}" target="_blank">📲 Direct Phone Auth</a>
+                            <a class="btn-link" href="${mobileUrl}" target="_blank">📲 Direct Mobile Handshake</a>
                         `;
                         listenAuth(d.token);
                     });
@@ -167,9 +171,9 @@ def ghost_desktop():
                                 clearInterval(interval);
                                 playSciFiChime();
                                 document.getElementById('mainBox').innerHTML = `
-                                    <div style="font-size:75px; margin:20px 0; color:#38bdf8;">🔓</div>
-                                    <h2 style="color:#34d399; margin:0;">BIOMETRIC MATCH CONFIRMED</h2>
-                                    <p style="color:#94a3b8; font-size:13px; margin: 10px 0;">RSA Handshake Validated. Access Granted.</p>
+                                    <div style="font-size:75px; margin:20px 0; color:#38bdf8;">⚡</div>
+                                    <h2 style="color:#34d399; margin:0;">BIOMETRIC AUTHENTICATED</h2>
+                                    <p style="color:#94a3b8; font-size:13px; margin: 10px 0;">Handshake Verified by Sahil's Cryptographic Enclave.</p>
                                 `;
                                 setTimeout(() => {
                                     window.location.href = '/dashboard?token=' + token;
@@ -185,6 +189,56 @@ def ghost_desktop():
     </html>
     """)
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        user_id = request.form.get('user_id', '').strip()
+        org_name = request.form.get('org_name', '').strip()
+        if user_id and org_name:
+            user_key = RSA.generate(2048)
+            pub_pem = user_key.publickey().export_key('PEM').decode('utf-8')
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO users (user_id, org_name, public_key, is_admin, created_at) VALUES (?, ?, ?, 0, ?)",
+                      (user_id, org_name, pub_pem, time.time()))
+            conn.commit()
+            conn.close()
+            return render_template_string("""
+            <body style='background:#020617; color:#34d399; font-family:sans-serif; text-align:center; padding:50px;'>
+                <h2>✅ Organization Registered!</h2>
+                <p style='color:#94a3b8;'>User <b>{{ user_id }}</b> of <b>{{ org_name }}</b> hardware vault created.</p>
+                <a href='/' style='color:#38bdf8; text-decoration:none;'>← Return to Terminal</a>
+            </body>
+            """, user_id=user_id, org_name=org_name)
+    
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AirAuth Multi-Tenant Registration</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 20px; padding: 30px; width: 100%; max-width: 380px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+            input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 1px solid #334155; background: #020617; color: #fff; box-sizing: border-box; }
+            .btn { width: 100%; padding: 14px; background: #0284c7; color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 15px; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h3 style="margin-top:0; color:#38bdf8;">➕ Register Enterprise Node</h3>
+            <p style="color:#94a3b8; font-size:13px;">Add a new employee or organization node to the AirAuth Vault.</p>
+            <form method="POST">
+                <input type="text" name="org_name" placeholder="Organization / Company Name" required>
+                <input type="text" name="user_id" placeholder="Unique User Identifier (e.g. employee_01)" required>
+                <button type="submit" class="btn">Generate Hardware Enclave</button>
+            </form>
+            <div style="margin-top:15px; text-align:center;"><a href="/" style="color:#64748b; font-size:12px; text-decoration:none;">← Return to Radar</a></div>
+        </div>
+    </body>
+    </html>
+    """)
+
 @app.route('/sdk-demo')
 def sdk_demo():
     return render_template_string("""
@@ -192,26 +246,20 @@ def sdk_demo():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Universal Web SDK Mockup</title>
+        <title>AirAuth Universal SDK Demo</title>
         <style>
-            body { background: #0f172a; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
-            .card { background: #1e293b; border-radius: 16px; padding: 30px; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
-            input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
-            .btn-normal { width: 100%; padding: 12px; background: #475569; border: none; border-radius: 8px; color: #fff; font-weight: bold; margin-top: 10px; cursor: not-allowed; }
-            .or-divider { margin: 20px 0; color: #64748b; font-size: 12px; }
-            .btn-airauth { width: 100%; padding: 14px; background: linear-gradient(135deg, #0284c7, #06b6d4); border: none; border-radius: 10px; color: #fff; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; text-decoration: none; }
+            body { background: #020617; color: #fff; font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 20px; padding: 30px; width: 100%; max-width: 400px; text-align: center; }
+            .btn-airauth { width: 100%; padding: 14px; background: linear-gradient(135deg, #0284c7, #06b6d4); border: none; border-radius: 12px; color: #fff; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; text-decoration: none; margin-top: 20px; }
         </style>
     </head>
     <body>
         <div class="card">
-            <h3 style="margin-top:0;">Corporate Cloud Login</h3>
-            <p style="color:#94a3b8; font-size:12px;">Standard Website Integrated with AirAuth SDK</p>
-            <input type="text" placeholder="Username (Old Way)" disabled>
-            <input type="password" placeholder="Password (Old Way)" disabled>
-            <button class="btn-normal">Login (Deprecated)</button>
-            <div class="or-divider">— OR ZERO-PASS INSTANT UNLOCK —</div>
-            <a class="btn-airauth" href="/">⚡ One-Touch AirAuth Login</a>
-            <div style="margin-top:20px;"><a href="/" style="color:#38bdf8; font-size:12px; text-decoration:none;">← Return to Radar HUD</a></div>
+            <span style="font-size:11px; background:#064e3b; color:#34d399; padding:4px 10px; border-radius:12px; font-weight:bold;">ENTERPRISE SDK INTEGRATION</span>
+            <h3 style="margin: 15px 0 5px;">Client Cloud Login Portal</h3>
+            <p style="color:#94a3b8; font-size:13px;">Embed AirAuth in any web portal with just 2 lines of code.</p>
+            <a class="btn-airauth" href="/">⚡ Instant Biometric Sign-In</a>
+            <div style="margin-top:20px;"><a href="/" style="color:#38bdf8; font-size:12px; text-decoration:none;">← Return to Main Terminal</a></div>
         </div>
     </body>
     </html>
@@ -224,7 +272,7 @@ def dashboard():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Vault</title>
+        <title>AirAuth Secure Vault</title>
         <style>
             body { background: #020617; color: #fff; font-family: -apple-system, sans-serif; min-height: 100vh; margin: 0; padding: 25px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
             .dash-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 24px; padding: 30px; max-width: 420px; width: 100%; text-align: center; }
@@ -270,6 +318,8 @@ def admin_panel():
     c = conn.cursor()
     c.execute("SELECT token, status, user_id, created_at, used FROM sessions ORDER BY created_at DESC LIMIT 6")
     sessions = c.fetchall()
+    c.execute("SELECT user_id, org_name, is_admin FROM users ORDER BY created_at DESC")
+    users = c.fetchall()
     conn.close()
 
     return render_template_string("""
@@ -277,26 +327,26 @@ def admin_panel():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Fleet Control</title>
+        <title>AirAuth Enterprise Fleet Control</title>
         <style>
-            body { background: #0b0f17; color: #f8fafc; font-family: monospace; margin: 0; padding: 25px; }
+            body { background: #020617; color: #f8fafc; font-family: -apple-system, monospace; margin: 0; padding: 25px; }
             .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 15px; }
             .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin: 20px 0; }
-            .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 15px; }
+            .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 15px; }
             .badge-active { color: #34d399; font-weight: bold; }
             .badge-locked { color: #f87171; font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #111827; border-radius: 10px; overflow: hidden; }
-            th, td { padding: 10px 14px; text-align: left; font-size: 12px; border-bottom: 1px solid #1f2937; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #0f172a; border-radius: 12px; overflow: hidden; border: 1px solid #1e293b; }
+            th, td { padding: 10px 14px; text-align: left; font-size: 12px; border-bottom: 1px solid #1e293b; }
             th { background: #1e293b; color: #94a3b8; }
         </style>
     </head>
     <body>
         <div class="header">
             <div>
-                <h3 style="margin:0; color:#38bdf8;">🏢 Enterprise Fleet Terminal Map</h3>
-                <span style="font-size:12px; color:#64748b;">Office Topology Live Monitoring</span>
+                <h3 style="margin:0; color:#38bdf8;">🏢 AirAuth Enterprise Fleet Map</h3>
+                <span style="font-size:12px; color:#64748b;">Architecture by Founder Sahil Ahmad</span>
             </div>
-            <a href="/" style="color:#94a3b8; text-decoration:none; font-size:13px;">← Radar HUD</a>
+            <a href="/" style="color:#94a3b8; text-decoration:none; font-size:13px;">← Return to HUD</a>
         </div>
 
         <div class="grid">
@@ -314,7 +364,19 @@ def admin_panel():
             </div>
         </div>
 
-        <h4>Recent Cryptographic Audit Logs</h4>
+        <h4>Registered Organization Vaults</h4>
+        <table>
+            <tr><th>User ID</th><th>Organization</th><th>Role</th></tr>
+            {% for u in users %}
+            <tr>
+                <td style="color:#38bdf8; font-weight:bold;">{{ u[0] }}</td>
+                <td>{{ u[1] }}</td>
+                <td>{{ 'Master Admin' if u[2] == 1 else 'Employee Node' }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        <h4 style="margin-top:30px;">Live Cryptographic Handshake Audit</h4>
         <table>
             <tr><th>Session Token</th><th>User</th><th>Status</th></tr>
             {% for s in sessions %}
@@ -327,7 +389,7 @@ def admin_panel():
         </table>
     </body>
     </html>
-    """, sessions=sessions)
+    """, sessions=sessions, users=users)
 
 @app.route('/api/create-beacon')
 def create_beacon():
@@ -349,19 +411,19 @@ def air_mobile():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Proximity Device</title>
+        <title>AirAuth Biometric Key</title>
         <style>
-            body { background: #0b0f19; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; text-align: center; }
-            .box { background: #131d33; border: 1px solid #1e293b; padding: 30px; border-radius: 24px; max-width: 320px; }
-            .btn { width: 100%; padding: 16px; background: #0284c7; color: #fff; border: none; border-radius: 14px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; }
+            body { background: #020617; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; text-align: center; }
+            .box { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 24px; max-width: 320px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+            .btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #0284c7, #06b6d4); color: #fff; border: none; border-radius: 14px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; }
         </style>
     </head>
     <body>
         <div class="box">
-            <div style="font-size: 45px; margin-bottom: 10px;">👻</div>
+            <div style="font-size: 45px; margin-bottom: 10px;">⚡</div>
             <h2 style="margin: 0 0 10px; color:#38bdf8;">AirAuth Handshake</h2>
-            <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">Screen proximity detected. Apply biometric.</p>
-            <button class="btn" onclick="authorizeAirAuth()">👆 1-Touch Fingerprint</button>
+            <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">Screen proximity detected. Apply biometric key.</p>
+            <button class="btn" onclick="authorizeAirAuth()">👆 1-Touch Biometric Sign</button>
         </div>
         <script>
         async function authorizeAirAuth() {
@@ -374,7 +436,7 @@ def air_mobile():
                     await navigator.credentials.create({
                         publicKey: {
                             challenge: challenge,
-                            rp: { name: "AirAuth Ghost-Pass" },
+                            rp: { name: "AirAuth Enterprise" },
                             user: { id: dummyId, name: "sahil_master", displayName: "Sahil Ahmad" },
                             pubKeyCredParams: [{ alg: -7, type: "public-key" }],
                             authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
@@ -409,7 +471,7 @@ def verify_signature():
         return "Token Expired", 403
 
     if not os.path.exists("my_private_key.pem"):
-        init_db_and_keys()
+        init_db()
         
     with open("my_private_key.pem", "rb") as f:
         priv_key = RSA.import_key(f.read())
@@ -427,9 +489,9 @@ def verify_signature():
             conn.commit()
             conn.close()
             return """
-            <body style='background:#030712; color:#4ade80; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; font-family:sans-serif;'>
-                <h2>⚡ Signal Transmitted!</h2>
-                <p style='color:#9ca3af;'>Desktop Unlocked!</p>
+            <body style='background:#020617; color:#4ade80; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; font-family:sans-serif;'>
+                <h2>⚡ Cryptographic Handshake Confirmed!</h2>
+                <p style='color:#9ca3af;'>Desktop Unlocked. Signal Received.</p>
             </body>
             """
         except Exception:
