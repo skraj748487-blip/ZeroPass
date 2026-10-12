@@ -102,11 +102,11 @@ def ghost_desktop():
             </div>
             <h2 style="margin: 0 0 5px; color:#38bdf8;">AirAuth (Ghost-Pass)</h2>
             <div class="shield-badge">🛡️ Zero-Trust Defense Active</div>
-            <p style="color: #94a3b8; font-size: 13px; margin: 15px 0 15px;">Phone ko paas layein. No QR, No Password.</p>
+            <p style="color: #94a3b8; font-size: 13px; margin: 15px 0 15px;">फ़ोन को पास लाएं। कोई पासवर्ड नहीं।</p>
             <div id="beacon" class="beacon-tag">Beacon scanning...</div>
-            <div id="status" class="status">Ghost signal broadcast ho raha hai...</div>
+            <div id="status" class="status">Ghost सिग्नल ब्रॉडकास्ट हो रहा है...</div>
             <div id="quick-link"></div>
-            <a class="admin-link" href="/admin">⚙️ Open Passwordless Admin Console</a>
+            <a class="admin-link" href="/admin">⚙️ पासवर्ड रहित एडमिन कंसोल खोलें</a>
         </div>
 
         <script>
@@ -116,9 +116,9 @@ def ghost_desktop():
                     .then(res => res.json())
                     .then(data => {
                         currentToken = data.token;
-                        document.getElementById('beacon').innerText = 'Beacon ID: ' + data.token.slice(0, 8);
+                        document.getElementById('beacon').innerText = 'बीकन आईडी: ' + data.token.slice(0, 8);
                         document.getElementById('quick-link').innerHTML = `
-                            <a class="btn-link" href="/air-mobile?token=${data.token}" target="_blank">📲 Phone Simulator Link</a>
+                            <a class="btn-link" href="/air-mobile?token=${data.token}" target="_blank">📲 फ़ोन सिम्युलेटर लिंक</a>
                         `;
                         listenAuth(data.token);
                     });
@@ -170,31 +170,31 @@ def dashboard():
     <body>
         <div class="dash-card">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="tag"><span class="pulse"></span>SESSION ACTIVE</span>
+                <span class="tag"><span class="pulse"></span>सत्र सक्रिय है</span>
                 <span style="color:#9ca3af; font-size:12px;">AirAuth v2.0</span>
             </div>
             
-            <h2 style="margin: 20px 0 5px; color:#f8fafc;">Welcome, Sahil</h2>
-            <p style="color:#94a3b8; font-size:13px; margin: 0;">Identity verified via RSA-2048 Asymmetric Hardware Key.</p>
+            <h2 style="margin: 20px 0 5px; color:#f8fafc;">स्वागत है, साहिल</h2>
+            <p style="color:#94a3b8; font-size:13px; margin: 0;">RSA-2048 हार्डवेयर कुंजी से पहचान सत्यापित की गई।</p>
 
             <div class="timer-box">
-                <div style="font-size:12px; color:#c7d2fe; margin-bottom: 5px;">🚶 Walk-Away Auto-Lock Sensor</div>
+                <div style="font-size:12px; color:#c7d2fe; margin-bottom: 5px;">🚶 वॉक-अवे ऑटो-लॉक सेंसर</div>
                 <div id="countdown" class="countdown">15s</div>
-                <div style="font-size:11px; color:#94a3b8; margin-top: 4px;">Phone door hone par screen turant lock hogi</div>
+                <div style="font-size:11px; color:#94a3b8; margin-top: 4px;">फ़ोन दूर होने पर स्क्रीन तुरंत लॉक होगी</div>
             </div>
 
             <div class="stat-grid">
                 <div class="stat-box">
-                    <div style="color:#9ca3af;">Encryption</div>
+                    <div style="color:#9ca3af;">एन्क्रिप्शन</div>
                     <div style="color:#38bdf8; font-weight:bold; margin-top:4px;">RSA-2048</div>
                 </div>
                 <div class="stat-box">
-                    <div style="color:#9ca3af;">Shield</div>
-                    <div style="color:#4ade80; font-weight:bold; margin-top:4px;">AI Active</div>
+                    <div style="color:#9ca3af;">सुरक्षा कवच</div>
+                    <div style="color:#4ade80; font-weight:bold; margin-top:4px;">सक्रिय</div>
                 </div>
             </div>
 
-            <button class="action-btn" style="margin-top:20px;" onclick="triggerLock()">🔒 Walk Away Now (Simulate Lock)</button>
+            <button class="action-btn" style="margin-top:20px;" onclick="triggerLock()">🔒 अभी लॉक करें</button>
         </div>
 
         <script>
@@ -217,7 +217,6 @@ def dashboard():
     </html>
     """)
 
-# --- Strictly Enforced Biometric WebAuthn Admin Console ---
 @app.route('/admin')
 def admin_panel():
     if not check_ip_security():
@@ -246,7 +245,7 @@ def admin_panel():
                 <div style="font-size: 45px; margin-bottom: 10px;">🛡️</div>
                 <h3 style="margin: 0 0 8px; color: #38bdf8;">Master Admin Vault</h3>
                 <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin: 0 0 20px;">
-                    Yahan koi password nahi hai. Is screen ko unlock karne ke liye aapke phone ka physical fingerprint/screen lock verify hona zaroori hai.
+                    यह स्क्रीन केवल अधिकृत फ़िंगरप्रिंट/स्क्रीन लॉक से खुलेगी।
                 </p>
                 <button class="btn" onclick="verifyAdminBiometric()">👆 Authenticate Fingerprint / Screen Lock</button>
                 <div id="err">❌ Biometric Verification Cancelled or Failed! Access Denied.</div>
@@ -261,7 +260,6 @@ def admin_panel():
                         const dummyId = new Uint8Array(16);
                         window.crypto.getRandomValues(dummyId);
                         
-                        // Hardware sensor trigger
                         await navigator.credentials.create({
                             publicKey: {
                                 challenge: challenge,
@@ -273,7 +271,6 @@ def admin_panel():
                             }
                         });
                         
-                        // Redirect only on verified hardware gesture
                         window.location.href = "/admin/verify-master?token={{ token }}";
                     } else {
                         alert("Hardware Authenticator not supported on this device/browser!");
@@ -451,7 +448,7 @@ def air_mobile():
             <div style="margin-bottom: 15px;"><span class="pulse-dot"></span><span style="color:#94a3b8; font-size:13px;">Screen In Proximity</span></div>
             <div style="font-size: 45px; margin-bottom: 10px;">👻</div>
             <h2 style="margin: 0 0 10px; color:#38bdf8;">Ghost-Pass Detected</h2>
-            <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">Screen ne phone ko hawa mein pehchan liya hai. Ungli lagakar unlock karein.</p>
+            <p style="color:#94a3b8; font-size:14px; margin: 0 0 20px;">स्क्रीन ने फ़ोन को पहचान लिया है। अंगुली लगाकर अनलॉक करें।</p>
             <button class="btn" onclick="authorizeAirAuth()">👆 1-Touch Fingerprint</button>
         </div>
 
@@ -495,10 +492,11 @@ def verify_signature():
     c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
     
-    if not row or row[2] == 1 or (time.time() - row[1] > 30):
+    # TTL: 120 Seconds (2 Minutes)
+    if not row or row[2] == 1 or (time.time() - row[1] > 120):
         record_failed_attempt()
         conn.close()
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session expired or token already consumed.</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⚠️ Anomaly Detected!</h2><p>Session expired (120s limit) or token already consumed.</p></body>", 403
 
     if not os.path.exists("my_private_key.pem"):
         init_db_and_keys()
@@ -521,7 +519,7 @@ def verify_signature():
             return """
             <body style='background:#030712; color:#4ade80; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; font-family:sans-serif;'>
                 <h2>⚡ Signal Transmitted!</h2>
-                <p style='color:#9ca3af;'>Screen unlock ho chuki hai. Desktop tab dekhein!</p>
+                <p style='color:#9ca3af;'>Screen अनलॉक हो चुकी है। डेस्कटॉप देखें!</p>
             </body>
             """
         except Exception:
