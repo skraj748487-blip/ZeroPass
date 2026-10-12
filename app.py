@@ -11,14 +11,6 @@ app = Flask(__name__)
 app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 
-# Global event triggers for hardware and desktop
-HARDWARE_TRIGGERS = {
-    "gate_relay": False,
-    "pc_unlock": False,
-    "last_user": None,
-    "trigger_time": 0
-}
-
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -57,35 +49,42 @@ def terminal_display():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Unified Gate & PC Terminal</title>
+        <title>AirAuth Enterprise Terminal</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <style>
             body { background: #020617; color: #38bdf8; font-family: monospace; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
             .badge { background: #0284c7; color: #fff; font-size: 11px; padding: 6px 14px; border-radius: 20px; font-weight: bold; margin-bottom: 12px; }
-            .card { background: #0f172a; border: 2px solid #0284c7; border-radius: 20px; padding: 25px; text-align: center; max-width: 420px; width: 100%; box-shadow: 0 0 40px rgba(2,132,199,0.25); }
+            .card { background: #0f172a; border: 2px solid #0284c7; border-radius: 20px; padding: 25px; text-align: center; max-width: 400px; width: 100%; box-shadow: 0 0 40px rgba(2,132,199,0.25); }
             .qr-box { background: #fff; padding: 10px; border-radius: 12px; display: inline-block; margin: 15px auto; }
             .metric { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; border-top: 1px dashed #334155; padding-top: 10px; margin-top: 15px; }
+            .nav-links { display: flex; justify-content: space-around; margin-top: 20px; border-top: 1px solid #1e293b; padding-top: 15px; }
+            .nav-links a { color: #94a3b8; font-size: 12px; text-decoration: none; display: flex; align-items: center; gap: 4px; }
             .btn { display: inline-block; margin-top: 12px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px; }
         </style>
     </head>
     <body>
-        <div class="badge">⚡ Unified Gate & PC Terminal // Anti-Replay ⚡</div>
+        <div class="badge">⚡ ENGINEERED BY SAHIL AHMAD // LEAD ARCHITECT ⚡</div>
         <div class="card" id="box">
-            <h2 style="margin: 0; color: #fff; font-size: 20px;">AirAuth Access Point</h2>
-            <div style="font-size: 12px; color: #34d399; margin: 5px 0;">[ DUAL-MODE: DOOR RELAY + PC UNLOCK ]</div>
+            <h2 style="margin: 0; color: #fff; font-size: 20px;">AirAuth Enterprise Terminal</h2>
+            <div style="font-size: 12px; color: #34d399; margin: 5px 0;">[ Zero-Trust RSA-2048 Hardware Binding ]</div>
 
             <div class="qr-box"><div id="qrcode"></div></div>
-            <div id="beacon" style="font-size: 13px; color: #e2e8f0;">Syncing Rolling Token...</div>
+            <div id="beacon" style="font-size: 13px; color: #e2e8f0;">BROADCASTING HARDWARE TOKEN</div>
             <div id="countdown" style="font-size: 11px; color: #f59e0b; margin-top: 4px;">Refreshing in: 10s</div>
 
             <div class="metric">
-                <span>GATE: RELAY READY</span>
-                <span>DESK: PC AUTO-LINK</span>
-                <span>RANGE: 1.5M</span>
+                <span>PROTOCOL<br><b style="color:#38bdf8;">BLE / WebAuthn</b></span>
+                <span>SECURITY<br><b style="color:#38bdf8;">RSA-2048</b></span>
+                <span>RADIUS<br><b style="color:#38bdf8;">&lt; 1.5 Meter</b></span>
             </div>
 
             <div id="quick-link"></div>
-            <div style="margin-top: 15px;"><a href="/admin" style="color: #64748b; font-size: 12px; text-decoration: none;">🏢 View Real-Time Access Logs</a></div>
+
+            <div class="nav-links">
+                <a href="/register">➕ Register Org</a>
+                <a href="/sdk-demo">🌐 Universal SDK</a>
+                <a href="/admin">🏢 Fleet Control</a>
+            </div>
         </div>
 
         <script>
@@ -115,7 +114,7 @@ def terminal_display():
                     .then(d => {
                         activeToken = d.token;
                         timer = 10;
-                        document.getElementById('beacon').innerText = 'ROLLING NONCE: ' + d.token.slice(0, 8);
+                        document.getElementById('beacon').innerText = 'BEACON ID: ' + d.token.slice(0, 8);
                         const mobileUrl = window.location.origin + '/air-mobile?token=' + d.token;
                         
                         document.getElementById('qrcode').innerHTML = "";
@@ -128,7 +127,7 @@ def terminal_display():
                         });
 
                         document.getElementById('quick-link').innerHTML = `
-                            <a class="btn" href="${mobileUrl}" target="_blank">📲 Direct Mobile Trigger</a>
+                            <a class="btn" href="${mobileUrl}" target="_blank">📲 Direct Mobile Handshake</a>
                         `;
                     });
             }
@@ -152,8 +151,8 @@ def terminal_display():
                             document.getElementById('box').innerHTML = `
                                 <div style="font-size:65px; margin:20px 0; color:#38bdf8;">🔓</div>
                                 <h2 style="color:#34d399; margin:0;">ACCESS GRANTED</h2>
-                                <p style="color:#94a3b8; font-size:13px; margin: 8px 0;">Physical Gate Relay Fired & PC Session Authorized.</p>
-                                <div style="font-size:12px; color:#38bdf8;">Verified User: ${s.user_id}</div>
+                                <p style="color:#94a3b8; font-size:13px; margin: 8px 0;">RSA-2048 Handshake Verified.</p>
+                                <div style="font-size:12px; color:#38bdf8;">Authenticated User: ${s.user_id}</div>
                             `;
                             setTimeout(() => { location.reload(); }, 3500);
                         }
@@ -195,8 +194,8 @@ def air_mobile():
     <body>
         <div class="box">
             <div style="font-size: 40px; margin-bottom: 10px;">⚡</div>
-            <h3 style="margin: 0; color: #38bdf8;">AirAuth Master Key</h3>
-            <p style="color:#94a3b8; font-size: 13px; margin-top: 8px;">Trigger gate relay and unlock desktop workstation.</p>
+            <h3 style="margin: 0; color: #38bdf8;">AirAuth Authenticator</h3>
+            <p style="color:#94a3b8; font-size: 13px; margin-top: 8px;">Tap fingerprint to broadcast encrypted signature.</p>
             <button class="btn" onclick="triggerAuth()">👆 Verify Biometric</button>
         </div>
         <script>
@@ -221,25 +220,15 @@ def verify_signature():
         return "<body style='background:#020617; color:#ef4444; text-align:center; padding:50px;'><h3>⚠️ Token Expired (Anti-Replay)</h3></body>", 403
 
     c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_master", token))
-    
-    # Audit Logs
     c.execute("INSERT INTO access_logs (user_id, action, target, timestamp) VALUES (?, ?, ?, ?)", 
-              ("sahil_master", "GATE_RELAY_OPEN", "Front Barrier Motor", time.time()))
-    c.execute("INSERT INTO access_logs (user_id, action, target, timestamp) VALUES (?, ?, ?, ?)", 
-              ("sahil_master", "DESKTOP_UNLOCKED", "Workstation PC-01", time.time()))
+              ("sahil_master", "BIOMETRIC_HANDSHAKE", "AirAuth Terminal", time.time()))
     conn.commit()
     conn.close()
-
-    # Trigger Real Hardware and PC Flags
-    HARDWARE_TRIGGERS["gate_relay"] = True
-    HARDWARE_TRIGGERS["pc_unlock"] = True
-    HARDWARE_TRIGGERS["last_user"] = "sahil_master"
-    HARDWARE_TRIGGERS["trigger_time"] = time.time()
     
     return """
     <body style='background:#020617; color:#34d399; font-family:sans-serif; text-align:center; padding:50px;'>
         <h2>⚡ Biometric Verified!</h2>
-        <p style='color:#94a3b8;'>Gate Relay Activated & PC Command Broadcasted.</p>
+        <p style='color:#94a3b8;'>Cryptographic handshake confirmed. Terminal Unlocked.</p>
     </body>
     """
 
@@ -255,25 +244,59 @@ def session_status():
         return jsonify({"status": row[0], "user_id": row[1]})
     return jsonify({"status": "NOT_FOUND"})
 
-# REAL HARDWARE BRIDGE: ESP32 or Raspberry Pi Relay Listener
-@app.route('/api/gate/check-relay')
-def check_gate_relay():
-    now = time.time()
-    # Trigger active for 5 seconds window
-    if HARDWARE_TRIGGERS["gate_relay"] and (now - HARDWARE_TRIGGERS["trigger_time"] < 5):
-        HARDWARE_TRIGGERS["gate_relay"] = False
-        return jsonify({"gate_state": "OPEN", "user": HARDWARE_TRIGGERS["last_user"]})
-    return jsonify({"gate_state": "LOCKED"})
+@app.route('/register')
+def register_page():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Register Org // AirAuth</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; padding: 25px; }
+            .box { max-width: 420px; margin: auto; background: #0f172a; padding: 25px; border-radius: 16px; border: 1px solid #1e293b; }
+            input { width: 100%; padding: 10px; margin: 8px 0 15px 0; background: #020617; border: 1px solid #334155; color: #fff; border-radius: 8px; box-sizing: border-box; }
+            .btn { width: 100%; padding: 12px; background: #0284c7; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h3 style="color:#38bdf8; margin-top:0;">Register New Org / Node</h3>
+            <label>Organization Name</label>
+            <input type="text" placeholder="e.g. Acme Corp">
+            <label>Master Admin ID</label>
+            <input type="text" placeholder="e.g. admin@acme.com">
+            <button class="btn">Generate Hardware Keys</button>
+            <div style="margin-top:15px; text-align:center;"><a href="/" style="color:#64748b; text-decoration:none;">← Return to Terminal</a></div>
+        </div>
+    </body>
+    </html>
+    """)
 
-# REAL PC AGENT BRIDGE: Windows Background Agent Listener
-@app.route('/api/pc/check-unlock')
-def check_pc_unlock():
-    now = time.time()
-    # Trigger active for 5 seconds window
-    if HARDWARE_TRIGGERS["pc_unlock"] and (now - HARDWARE_TRIGGERS["trigger_time"] < 5):
-        HARDWARE_TRIGGERS["pc_unlock"] = False
-        return jsonify({"action": "UNLOCK_SCREEN", "user": HARDWARE_TRIGGERS["last_user"]})
-    return jsonify({"action": "KEEP_LOCKED"})
+@app.route('/sdk-demo')
+def sdk_demo():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Universal SDK // Demo</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
+            .modal { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 16px; text-align: center; max-width: 340px; width:100%; }
+            .airauth-btn { background: linear-gradient(135deg, #0284c7, #2563eb); color: #fff; border:none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px; }
+        </style>
+    </head>
+    <body>
+        <div class="modal">
+            <h3 style="margin-top:0;">Acme Portal Login</h3>
+            <p style="color:#94a3b8; font-size:13px;">Experience One-Touch Biometric Sign-in</p>
+            <button class="airauth-btn" onclick="alert('AirAuth SDK Triggered!')">⚡ Sign in with AirAuth</button>
+            <div style="margin-top:20px;"><a href="/" style="color:#64748b; font-size:12px; text-decoration:none;">← Back to Terminal</a></div>
+        </div>
+    </body>
+    </html>
+    """)
 
 @app.route('/admin')
 def admin_panel():
@@ -287,7 +310,7 @@ def admin_panel():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Unified Audit Logs</title>
+        <title>Fleet Control // Admin</title>
         <style>
             body { background: #020617; color: #fff; font-family: monospace; padding: 20px; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #0f172a; }
@@ -296,10 +319,10 @@ def admin_panel():
         </style>
     </head>
     <body>
-        <h3>🏢 Unified Hardware Relay & PC Access Logs</h3>
+        <h3>🏢 Fleet Control & Cryptographic Audit Logs</h3>
         <a href="/" style="color:#64748b; text-decoration:none;">← Return to Terminal</a>
         <table>
-            <tr><th>User</th><th>Hardware Action</th><th>Target Device</th></tr>
+            <tr><th>User</th><th>Action Trigger</th><th>Target Device</th></tr>
             {% for l in logs %}
             <tr><td>{{ l[0] }}</td><td style="color:#34d399;">{{ l[1] }}</td><td>{{ l[2] }}</td></tr>
             {% endfor %}
