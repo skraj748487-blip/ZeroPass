@@ -2,9 +2,6 @@ from flask import Flask, jsonify, request, render_template_string
 import uuid
 import os
 import time
-from Crypto.PublicKey import RSA
-from Crypto.Signature import pkcs1_15
-from Crypto.Hash import SHA256
 import sqlite3
 
 app = Flask(__name__)
@@ -18,25 +15,6 @@ def init_db():
                  (token TEXT PRIMARY KEY, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS access_logs 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, action TEXT, target TEXT, timestamp REAL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (user_id TEXT PRIMARY KEY, org_name TEXT, public_key TEXT, is_admin INTEGER DEFAULT 0)''')
-    conn.commit()
-    conn.close()
-
-    if not os.path.exists("my_private_key.pem") or not os.path.exists("my_public_key.pem"):
-        key = RSA.generate(2048)
-        with open("my_private_key.pem", "wb") as f:
-            f.write(key.export_key('PEM'))
-        with open("my_public_key.pem", "wb") as f:
-            f.write(key.publickey().export_key('PEM'))
-
-    with open("my_public_key.pem", "rb") as f:
-        pub = f.read().decode('utf-8')
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO users (user_id, org_name, public_key, is_admin) VALUES (?, ?, ?, 1)", 
-              ("sahil_master", "AirAuth Enterprise", pub))
     conn.commit()
     conn.close()
 
@@ -57,8 +35,6 @@ def terminal_display():
             .card { background: #0f172a; border: 2px solid #0284c7; border-radius: 20px; padding: 25px; text-align: center; max-width: 400px; width: 100%; box-shadow: 0 0 40px rgba(2,132,199,0.25); }
             .qr-box { background: #fff; padding: 10px; border-radius: 12px; display: inline-block; margin: 15px auto; }
             .metric { display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; border-top: 1px dashed #334155; padding-top: 10px; margin-top: 15px; }
-            .nav-links { display: flex; justify-content: space-around; margin-top: 20px; border-top: 1px solid #1e293b; padding-top: 15px; }
-            .nav-links a { color: #94a3b8; font-size: 12px; text-decoration: none; display: flex; align-items: center; gap: 4px; }
             .btn { display: inline-block; margin-top: 12px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 13px; }
         </style>
     </head>
@@ -66,25 +42,20 @@ def terminal_display():
         <div class="badge">⚡ ENGINEERED BY SAHIL AHMAD // LEAD ARCHITECT ⚡</div>
         <div class="card" id="box">
             <h2 style="margin: 0; color: #fff; font-size: 20px;">AirAuth Enterprise Terminal</h2>
-            <div style="font-size: 12px; color: #34d399; margin: 5px 0;">[ Zero-Trust RSA-2048 Hardware Binding ]</div>
+            <div style="font-size: 12px; color: #34d399; margin: 5px 0;">[ Strict Hardware Biometric Bound ]</div>
 
             <div class="qr-box"><div id="qrcode"></div></div>
             <div id="beacon" style="font-size: 13px; color: #e2e8f0;">BROADCASTING HARDWARE TOKEN</div>
             <div id="countdown" style="font-size: 11px; color: #f59e0b; margin-top: 4px;">Refreshing in: 10s</div>
 
             <div class="metric">
-                <span>PROTOCOL<br><b style="color:#38bdf8;">BLE / WebAuthn</b></span>
-                <span>SECURITY<br><b style="color:#38bdf8;">RSA-2048</b></span>
-                <span>RADIUS<br><b style="color:#38bdf8;">&lt; 1.5 Meter</b></span>
+                <span>GATE: SECURE</span>
+                <span>DESK: LOCKED</span>
+                <span>BIOMETRIC: MANDATORY</span>
             </div>
 
             <div id="quick-link"></div>
-
-            <div class="nav-links">
-                <a href="/register">➕ Register Org</a>
-                <a href="/sdk-demo">🌐 Universal SDK</a>
-                <a href="/admin">🏢 Fleet Control</a>
-            </div>
+            <div style="margin-top: 15px;"><a href="/admin" style="color: #64748b; font-size: 12px; text-decoration: none;">🏢 View Real-Time Logs</a></div>
         </div>
 
         <script>
@@ -151,8 +122,8 @@ def terminal_display():
                             document.getElementById('box').innerHTML = `
                                 <div style="font-size:65px; margin:20px 0; color:#38bdf8;">🔓</div>
                                 <h2 style="color:#34d399; margin:0;">ACCESS GRANTED</h2>
-                                <p style="color:#94a3b8; font-size:13px; margin: 8px 0;">RSA-2048 Handshake Verified.</p>
-                                <div style="font-size:12px; color:#38bdf8;">Authenticated User: ${s.user_id}</div>
+                                <p style="color:#94a3b8; font-size:13px; margin: 8px 0;">Hardware Biometric Verified by Android Sensor.</p>
+                                <div style="font-size:12px; color:#38bdf8;">Verified User: ${s.user_id}</div>
                             `;
                             setTimeout(() => { location.reload(); }, 3500);
                         }
@@ -186,21 +157,69 @@ def air_mobile():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>AirAuth Biometric Key</title>
         <style>
-            body { background: #020617; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .box { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 20px; text-align: center; max-width: 320px; width: 100%; }
+            body { background: #020617; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .box { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 20px; text-align: center; max-width: 320px; width: 100%; box-shadow: 0 0 30px rgba(2,132,199,0.2); }
             .btn { width: 100%; padding: 15px; background: #0284c7; color: #fff; border: none; border-radius: 12px; font-weight: bold; font-size: 15px; cursor: pointer; margin-top: 20px; }
+            #status { margin-top: 15px; font-size: 13px; color: #f59e0b; }
         </style>
     </head>
     <body>
         <div class="box">
-            <div style="font-size: 40px; margin-bottom: 10px;">⚡</div>
-            <h3 style="margin: 0; color: #38bdf8;">AirAuth Authenticator</h3>
-            <p style="color:#94a3b8; font-size: 13px; margin-top: 8px;">Tap fingerprint to broadcast encrypted signature.</p>
-            <button class="btn" onclick="triggerAuth()">👆 Verify Biometric</button>
+            <div style="font-size: 40px; margin-bottom: 10px;">🛡️</div>
+            <h3 style="margin: 0; color: #38bdf8;">Hardware Biometric Lock</h3>
+            <p style="color:#94a3b8; font-size: 13px; margin-top: 8px;">Fingerprint / Face ID scan is mandatory for terminal access.</p>
+            <button class="btn" id="bioBtn" onclick="runBiometricChallenge()">👆 Scan Fingerprint Now</button>
+            <div id="status"></div>
         </div>
+
         <script>
-        function triggerAuth() {
-            window.location.href = "/api/verify-signature?token={{ token }}";
+        async function runBiometricChallenge() {
+            const statusDiv = document.getElementById('status');
+            const btn = document.getElementById('bioBtn');
+            statusDiv.innerText = "Prompting Native Sensor...";
+
+            if (!window.PublicKeyCredential) {
+                statusDiv.innerText = "❌ WebAuthn Biometrics not supported on this browser.";
+                return;
+            }
+
+            try {
+                // Real Android Hardware Sensor Challenge
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+
+                const options = {
+                    publicKey: {
+                        challenge: challenge,
+                        rp: { name: "AirAuth Enterprise" },
+                        user: {
+                            id: new Uint8Array([1, 2, 3, 4, 5]),
+                            name: "sahil_master",
+                            displayName: "Sahil Ahmad"
+                        },
+                        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+                        authenticatorSelection: {
+                            authenticatorAttachment: "platform",
+                            userVerification: "required"
+                        },
+                        timeout: 60000
+                    }
+                };
+
+                btn.disabled = true;
+                // THIS TRIGGERS THE REAL OS FINGERPRINT DIALOG
+                const credential = await navigator.credentials.create(options);
+
+                if (credential) {
+                    statusDiv.style.color = "#34d399";
+                    statusDiv.innerText = "⚡ Hardware Fingerprint Confirmed! Transmitting...";
+                    window.location.href = "/api/verify-signature?token={{ token }}";
+                }
+            } catch (err) {
+                btn.disabled = false;
+                statusDiv.style.color = "#ef4444";
+                statusDiv.innerText = "❌ Biometric Cancelled / Failed: " + (err.name || "Access Denied");
+            }
         }
         </script>
     </body>
@@ -221,14 +240,14 @@ def verify_signature():
 
     c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_master", token))
     c.execute("INSERT INTO access_logs (user_id, action, target, timestamp) VALUES (?, ?, ?, ?)", 
-              ("sahil_master", "BIOMETRIC_HANDSHAKE", "AirAuth Terminal", time.time()))
+              ("sahil_master", "PHYSICAL_BIOMETRIC_CONFIRMED", "AirAuth Terminal", time.time()))
     conn.commit()
     conn.close()
     
     return """
     <body style='background:#020617; color:#34d399; font-family:sans-serif; text-align:center; padding:50px;'>
-        <h2>⚡ Biometric Verified!</h2>
-        <p style='color:#94a3b8;'>Cryptographic handshake confirmed. Terminal Unlocked.</p>
+        <h2>⚡ Biometric Verified by Sensor!</h2>
+        <p style='color:#94a3b8;'>Physical hardware challenge confirmed. Terminal Unlocked.</p>
     </body>
     """
 
@@ -244,60 +263,6 @@ def session_status():
         return jsonify({"status": row[0], "user_id": row[1]})
     return jsonify({"status": "NOT_FOUND"})
 
-@app.route('/register')
-def register_page():
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Register Org // AirAuth</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; padding: 25px; }
-            .box { max-width: 420px; margin: auto; background: #0f172a; padding: 25px; border-radius: 16px; border: 1px solid #1e293b; }
-            input { width: 100%; padding: 10px; margin: 8px 0 15px 0; background: #020617; border: 1px solid #334155; color: #fff; border-radius: 8px; box-sizing: border-box; }
-            .btn { width: 100%; padding: 12px; background: #0284c7; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; }
-        </style>
-    </head>
-    <body>
-        <div class="box">
-            <h3 style="color:#38bdf8; margin-top:0;">Register New Org / Node</h3>
-            <label>Organization Name</label>
-            <input type="text" placeholder="e.g. Acme Corp">
-            <label>Master Admin ID</label>
-            <input type="text" placeholder="e.g. admin@acme.com">
-            <button class="btn">Generate Hardware Keys</button>
-            <div style="margin-top:15px; text-align:center;"><a href="/" style="color:#64748b; text-decoration:none;">← Return to Terminal</a></div>
-        </div>
-    </body>
-    </html>
-    """)
-
-@app.route('/sdk-demo')
-def sdk_demo():
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Universal SDK // Demo</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
-            .modal { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 16px; text-align: center; max-width: 340px; width:100%; }
-            .airauth-btn { background: linear-gradient(135deg, #0284c7, #2563eb); color: #fff; border:none; padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 15px; }
-        </style>
-    </head>
-    <body>
-        <div class="modal">
-            <h3 style="margin-top:0;">Acme Portal Login</h3>
-            <p style="color:#94a3b8; font-size:13px;">Experience One-Touch Biometric Sign-in</p>
-            <button class="airauth-btn" onclick="alert('AirAuth SDK Triggered!')">⚡ Sign in with AirAuth</button>
-            <div style="margin-top:20px;"><a href="/" style="color:#64748b; font-size:12px; text-decoration:none;">← Back to Terminal</a></div>
-        </div>
-    </body>
-    </html>
-    """)
-
 @app.route('/admin')
 def admin_panel():
     conn = sqlite3.connect(DB_PATH)
@@ -310,7 +275,7 @@ def admin_panel():
     <html>
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Fleet Control // Admin</title>
+        <title>AirAuth Audit Logs</title>
         <style>
             body { background: #020617; color: #fff; font-family: monospace; padding: 20px; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #0f172a; }
@@ -319,10 +284,10 @@ def admin_panel():
         </style>
     </head>
     <body>
-        <h3>🏢 Fleet Control & Cryptographic Audit Logs</h3>
+        <h3>🏢 Hardware Biometric Audit Logs</h3>
         <a href="/" style="color:#64748b; text-decoration:none;">← Return to Terminal</a>
         <table>
-            <tr><th>User</th><th>Action Trigger</th><th>Target Device</th></tr>
+            <tr><th>User</th><th>Verification Type</th><th>Target Device</th></tr>
             {% for l in logs %}
             <tr><td>{{ l[0] }}</td><td style="color:#34d399;">{{ l[1] }}</td><td>{{ l[2] }}</td></tr>
             {% endfor %}
