@@ -65,7 +65,7 @@ init_db_and_keys()
 @app.route('/')
 def ghost_desktop():
     if not check_ip_security():
-        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted due to suspicious activity.</p></body>", 403
+        return "<body style='background:#030712; color:#ef4444; font-family:sans-serif; text-align:center; padding:50px;'><h2>⛔ ACCESS BLOCKED</h2><p>Your IP has been blacklisted.</p></body>", 403
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -73,38 +73,31 @@ def ghost_desktop():
     <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Ghost-Pass | AirAuth Engine</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <style>
-            body { background: #030712; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-            .radar-container { position: relative; width: 220px; height: 220px; display: flex; align-items: center; justify-content: center; margin-bottom: 25px; }
-            .radar-circle { position: absolute; border: 2px solid #06b6d4; border-radius: 50%; width: 100%; height: 100%; animation: pulse 2s infinite ease-out; opacity: 0; }
-            .radar-circle:nth-child(2) { animation-delay: 0.6s; }
-            .radar-circle:nth-child(3) { animation-delay: 1.2s; }
-            .core-icon { font-size: 55px; z-index: 2; }
-            @keyframes pulse {
-                0% { transform: scale(0.3); opacity: 0.9; }
-                100% { transform: scale(1.4); opacity: 0; }
-            }
-            .card { background: #111827; border: 1px solid #1f2937; padding: 30px; border-radius: 20px; text-align: center; max-width: 360px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-            .beacon-tag { font-family: monospace; background: #1f2937; padding: 6px 12px; border-radius: 8px; color: #38bdf8; font-size: 13px; }
-            .status { margin-top: 15px; color: #9ca3af; font-size: 14px; }
-            .btn-link { display: inline-block; margin-top: 15px; padding: 10px 18px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: bold; }
-            .shield-badge { font-size: 11px; color: #34d399; margin-top: 10px; display: inline-block; background: #064e3b; padding: 3px 10px; border-radius: 12px; }
+            body { background: #030712; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .card { background: #111827; border: 1px solid #1f2937; padding: 25px; border-radius: 20px; text-align: center; max-width: 380px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+            .qr-wrapper { background: #ffffff; padding: 12px; border-radius: 12px; display: inline-block; margin: 15px auto; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+            #qrcode img { display: block; margin: 0 auto; }
+            .beacon-tag { font-family: monospace; background: #1f2937; padding: 6px 12px; border-radius: 8px; color: #38bdf8; font-size: 13px; display: inline-block; }
+            .status { margin-top: 12px; color: #9ca3af; font-size: 13px; }
+            .btn-link { display: inline-block; margin-top: 12px; padding: 10px 16px; background: #0284c7; color: #fff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: bold; }
+            .shield-badge { font-size: 11px; color: #34d399; margin-top: 8px; display: inline-block; background: #064e3b; padding: 3px 10px; border-radius: 12px; }
             .admin-link { display: block; margin-top: 15px; color: #64748b; font-size: 12px; text-decoration: none; }
         </style>
     </head>
     <body>
         <div class="card">
-            <div class="radar-container">
-                <div class="radar-circle"></div>
-                <div class="radar-circle"></div>
-                <div class="radar-circle"></div>
-                <div class="core-icon">📡</div>
+            <h2 style="margin: 0 0 4px; color:#38bdf8;">AirAuth (Ghost-Pass)</h2>
+            <div class="shield-badge">🛡️ Zero-Trust Dynamic Pair</div>
+            
+            <div class="qr-wrapper">
+                <div id="qrcode"></div>
             </div>
-            <h2 style="margin: 0 0 5px; color:#38bdf8;">AirAuth (Ghost-Pass)</h2>
-            <div class="shield-badge">🛡️ Zero-Trust Defense Active</div>
-            <p style="color: #94a3b8; font-size: 13px; margin: 15px 0 15px;">फ़ोन को पास लाएं। कोई पासवर्ड नहीं।</p>
+
+            <p style="color: #94a3b8; font-size: 13px; margin: 5px 0 10px;">कैमरे से QR स्कैन करें या फ़ोन पास लाएं</p>
             <div id="beacon" class="beacon-tag">Beacon scanning...</div>
-            <div id="status" class="status">Ghost सिग्नल ब्रॉडकास्ट हो रहा है...</div>
+            <div id="status" class="status">ब्रॉडकास्ट सक्रिय (120s वैलिडिटी)...</div>
             <div id="quick-link"></div>
             <a class="admin-link" href="/admin">⚙️ पासवर्ड रहित एडमिन कंसोल खोलें</a>
         </div>
@@ -117,8 +110,21 @@ def ghost_desktop():
                     .then(data => {
                         currentToken = data.token;
                         document.getElementById('beacon').innerText = 'बीकन आईडी: ' + data.token.slice(0, 8);
+                        
+                        const mobileUrl = window.location.origin + '/air-mobile?token=' + data.token;
+                        
+                        document.getElementById('qrcode').innerHTML = "";
+                        new QRCode(document.getElementById("qrcode"), {
+                            text: mobileUrl,
+                            width: 160,
+                            height: 160,
+                            colorDark : "#000000",
+                            colorLight : "#ffffff",
+                            correctLevel : QRCode.CorrectLevel.M
+                        });
+
                         document.getElementById('quick-link').innerHTML = `
-                            <a class="btn-link" href="/air-mobile?token=${data.token}" target="_blank">📲 फ़ोन सिम्युलेटर लिंक</a>
+                            <a class="btn-link" href="${mobileUrl}" target="_blank">📲 फ़ोन सिम्युलेटर लिंक</a>
                         `;
                         listenAuth(data.token);
                     });
@@ -131,8 +137,11 @@ def ghost_desktop():
                         .then(s => {
                             if (s.status === 'VERIFIED') {
                                 clearInterval(interval);
-                                document.querySelector('.radar-container').innerHTML = '<div style="font-size:70px;">⚡</div>';
-                                document.getElementById('status').innerHTML = '<span style="color:#4ade80; font-size:16px; font-weight:bold;">AirAuth Verified! Redirecting...</span>';
+                                document.querySelector('.card').innerHTML = `
+                                    <div style="font-size:70px; margin:20px 0;">⚡</div>
+                                    <h3 style="color:#4ade80;">AirAuth Verified!</h3>
+                                    <p style="color:#94a3b8;">Vault खुल रहा है...</p>
+                                `;
                                 setTimeout(() => {
                                     window.location.href = '/dashboard?token=' + token;
                                 }, 1000);
@@ -492,7 +501,6 @@ def verify_signature():
     c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
     
-    # TTL: 120 Seconds (2 Minutes)
     if not row or row[2] == 1 or (time.time() - row[1] > 120):
         record_failed_attempt()
         conn.close()
