@@ -12,6 +12,7 @@ app = Flask(__name__)
 app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 MASTER_SALT = os.urandom(16).hex()
+REAL_UPI_ID = "7484878440-2@ybl"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -256,7 +257,6 @@ def terminal_display():
 @app.route('/api/create-beacon')
 def create_beacon():
     token = str(uuid.uuid4())
-    # Challenge ko base64url safe string banate hain
     raw_challenge = os.urandom(32)
     challenge = base64.urlsafe_b64encode(raw_challenge).decode('utf-8').rstrip('=')
     
@@ -347,7 +347,6 @@ def air_mobile():
                     statusDiv.style.color = "#34d399";
                     statusDiv.innerText = "Verifying cryptographic proof with server...";
 
-                    // Encode raw client data
                     const clientDataText = new TextDecoder().decode(credential.response.clientDataJSON);
 
                     const response = await fetch('/api/verify-signature', {
@@ -398,7 +397,6 @@ def verify_signature():
         
     expected_challenge, created_at, used = row[0], row[1], row[2]
 
-    # Anti-Replay Checks
     if used == 1:
         conn.close()
         return jsonify({"success": False, "error": "Token Already Consumed (Replay Blocked)"}), 403
@@ -406,23 +404,20 @@ def verify_signature():
         conn.close()
         return jsonify({"success": False, "error": "Token Window Expired"}), 403
 
-    # ASLI MATHEMATICAL VALIDATION: Check if clientData contains the exact server challenge
     try:
         client_data = json.loads(client_data_raw)
         received_challenge = client_data.get('challenge', '')
         
-        # Base64url padding match verification
         clean_expected = expected_challenge.rstrip('=').replace('+', '-').replace('/', '_')
         clean_received = received_challenge.rstrip('=').replace('+', '-').replace('/', '_')
 
         if clean_expected != clean_received:
             conn.close()
-            return jsonify({"success": False, "error": "Cryptographic Challenge Mismatch (Hacking Attempt Blocked)"}), 403
-    except Exception as e:
+            return jsonify({"success": False, "error": "Cryptographic Challenge Mismatch"}), 403
+    except Exception:
         conn.close()
         return jsonify({"success": False, "error": "Invalid Cryptographic Data Structure"}), 400
 
-    # Signature Validated - Mark used
     c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_master", token))
     c.execute("INSERT INTO access_logs (user_id, action, target, timestamp) VALUES (?, ?, ?, ?)", 
               ("sahil_master", "MATHEMATICALLY_VERIFIED_WEBAUTHN_HANDSHAKE", "AirAuth Sovereign Engine", time.time()))
@@ -499,6 +494,7 @@ def pricing_page():
 def checkout_page():
     plan = request.args.get('plan', 'Business')
     price = request.args.get('price', '1499')
+    upi_payment_url = f"upi://pay?pa={REAL_UPI_ID}&pn=Sahil%20Ahmad%20AirAuth&am={price}&cu=INR"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -516,36 +512,39 @@ def checkout_page():
     </head>
     <body>
         <div class="box">
-            <h3 style="color:#38bdf8; margin: 0;">Instant License Provisioning</h3>
+            <h3 style="color:#38bdf8; margin: 0;">Direct Merchant Settlement</h3>
             <p style="color:#94a3b8; font-size: 12px; margin-top: 5px;">Plan: {{ plan }} (₹{{ price }}/month)</p>
             
             <div class="qr-mock">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=upi://pay?pa=sahil.airauth@upi&pn=AirAuth%20Enterprise&am={{ price }}&cu=INR" alt="UPI QR">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ upi_payment_url | urlencode }}" alt="UPI QR">
             </div>
             
-            <p style="color:#34d399; font-size: 11px;">Scan with GPay / PhonePe / Paytm</p>
+            <p style="color:#34d399; font-size: 11px;">Payee: {{ upi_id }}</p>
+            <p style="color:#94a3b8; font-size: 10px;">Scan via PhonePe / GPay / Paytm</p>
 
             <form action="/activate-license" method="POST">
                 <input type="email" name="email" placeholder="Enter Company/Owner Email" required>
+                <input type="text" name="utr" placeholder="Enter UPI UTR / Ref Number" required>
                 <input type="hidden" name="plan" value="{{ plan }}">
-                <button type="submit" class="btn">⚡ Activate API Key</button>
+                <button type="submit" class="btn">⚡ Verify UTR & Issue API Key</button>
             </form>
             <div style="margin-top:15px;"><a href="/pricing" style="color:#64748b; font-size:12px; text-decoration:none;">← Return</a></div>
         </div>
     </body>
     </html>
-    """, plan=plan, price=price)
+    """, plan=plan, price=price, upi_payment_url=upi_payment_url, upi_id=REAL_UPI_ID)
 
 @app.route('/activate-license', methods=['POST'])
 def activate_license():
     email = request.form.get('email')
     plan = request.form.get('plan')
+    utr = request.form.get('utr', 'DIRECT')
     api_key = "airauth_live_" + uuid.uuid4().hex[:18]
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO subscriptions (client_email, plan_name, api_key, status, created_at) VALUES (?, ?, ?, 'ACTIVE', ?)",
-              (email, plan, api_key, time.time()))
+    c.execute("INSERT INTO subscriptions (client_email, plan_name, api_key, status, created_at) VALUES (?, ?, ?, ?, ?)",
+              (email, f"{plan} [UTR:{utr[:10]}]", api_key, 'ACTIVE', time.time()))
     conn.commit()
     conn.close()
 
@@ -564,7 +563,7 @@ def activate_license():
     </head>
     <body>
         <div class="box">
-            <h2 style="color:#34d399; margin: 0;">🎉 Commercial License Live</h2>
+            <h2 style="color:#34d399; margin: 0;">🎉 Commercial License Activated</h2>
             <p style="color:#94a3b8; font-size: 13px;">Subscribed account: <b>{{ email }}</b></p>
             
             <div style="font-size: 12px; color: #cbd5e1; text-align: left;">Live Secret API Key:</div>
@@ -636,7 +635,7 @@ def admin_panel():
     <body>
         <h3>🏢 Commercial Subscribers & API Keys</h3>
         <table>
-            <tr><th>Client Email</th><th>Plan</th><th>API Key</th><th>Status</th></tr>
+            <tr><th>Client Email</th><th>Plan & UTR</th><th>API Key</th><th>Status</th></tr>
             {% for s in subs %}
             <tr><td>{{ s[0] }}</td><td>{{ s[1] }}</td><td style="color:#38bdf8;">{{ s[2] }}</td><td style="color:#34d399;">{{ s[3] }}</td></tr>
             {% endfor %}
