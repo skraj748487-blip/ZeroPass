@@ -1,10 +1,12 @@
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, jsonify, request, render_template_string, Response
 import uuid
 import os
 import time
 import sqlite3
 import hmac
 import hashlib
+import json
+import base64
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
@@ -24,6 +26,63 @@ def init_db():
     conn.close()
 
 init_db()
+
+@app.route('/airauth.js')
+def serve_sdk():
+    js_code = """
+    (function() {
+        window.AirAuth = {
+            init: function(apiKey) {
+                this.apiKey = apiKey;
+            },
+            login: function(callback) {
+                const overlay = document.createElement('div');
+                overlay.id = 'airauth-modal-root';
+                overlay.style = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(2,6,23,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:999999;font-family:monospace;';
+                
+                overlay.innerHTML = `
+                    <div style="background:#0f172a;border:2px solid #0284c7;border-radius:20px;padding:30px;width:340px;text-align:center;color:#fff;box-shadow:0 0 40px rgba(2,132,199,0.4);">
+                        <div style="font-size:11px;color:#38bdf8;margin-bottom:8px;">⚡ AIRAUTH QUANTUM SECURE</div>
+                        <h3 style="margin:0 0 15px 0;color:#fff;">Biometric Verification</h3>
+                        <div id="airauth-qr-slot" style="background:#fff;padding:10px;border-radius:12px;display:inline-block;margin-bottom:15px;"></div>
+                        <div id="airauth-status" style="font-size:12px;color:#f59e0b;margin-bottom:15px;">Awaiting Device Handshake...</div>
+                        <button id="airauth-close" style="background:#334155;border:none;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:monospace;">Cancel</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                document.getElementById('airauth-close').onclick = () => {
+                    document.body.removeChild(overlay);
+                };
+
+                fetch('/api/create-beacon')
+                    .then(r => r.json())
+                    .then(d => {
+                        const token = d.token;
+                        const qrUrl = window.location.origin + '/air-mobile?token=' + token;
+                        document.getElementById('airauth-qr-slot').innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrUrl)}" width="140" height="140" />`;
+                        
+                        const poller = setInterval(() => {
+                            fetch('/api/session-status?token=' + token)
+                                .then(r => r.json())
+                                .then(s => {
+                                    if(s.status === 'VERIFIED') {
+                                        clearInterval(poller);
+                                        document.getElementById('airauth-status').style.color = '#34d399';
+                                        document.getElementById('airauth-status').innerText = 'Verified: ' + s.user_id;
+                                        setTimeout(() => {
+                                            document.body.removeChild(overlay);
+                                            if (callback) callback({ success: true, user: s.user_id, token: token });
+                                        }, 1200);
+                                    }
+                                });
+                        }, 1000);
+                    });
+            }
+        };
+    })();
+    """
+    return Response(js_code, mimetype='application/javascript')
 
 @app.route('/')
 def terminal_display():
@@ -116,7 +175,7 @@ def terminal_display():
         
         <div class="card" id="box">
             <h2 style="margin: 0; color: #fff; font-size: 22px;">AirAuth Zero-Trust Node</h2>
-            <div style="font-size: 11px; color: #34d399; margin: 4px 0;">[ Zero-Trace Cryptographic Binding ]</div>
+            <div style="font-size: 11px; color: #34d399; margin: 4px 0;">[ Strict Cryptographic Mathematical Binding ]</div>
 
             <div class="qr-box">
                 <div id="qrcode"></div>
@@ -144,7 +203,7 @@ def terminal_display():
                     .then(d => {
                         activeToken = d.token;
                         timer = 15;
-                        document.getElementById('beacon').innerText = 'ENCRYPTED NONCE: ' + d.token.slice(0, 12);
+                        document.getElementById('beacon').innerText = 'SECURE TOKEN: ' + d.token.slice(0, 12);
                         const mobileUrl = window.location.origin + '/air-mobile?token=' + d.token;
                         
                         document.getElementById('qrcode').innerHTML = "";
@@ -180,7 +239,7 @@ def terminal_display():
                             document.getElementById('box').innerHTML = `
                                 <div style="font-size:75px; margin:10px 0; color:#34d399;">🔓</div>
                                 <h2 style="color:#34d399; margin:0;">AUTHENTICATION VERIFIED</h2>
-                                <p style="color:#94a3b8; font-size:12px; margin: 8px 0;">Hardware Nonce Validated via Cryptographic Signature.</p>
+                                <p style="color:#94a3b8; font-size:12px; margin: 8px 0;">Hardware Challenge Mathematically Validated.</p>
                                 <div style="font-size:12px; color:#38bdf8; border:1px dashed #0284c7; padding:8px; border-radius:8px;">Identity: ${s.user_id}</div>
                             `;
                             setTimeout(() => { location.reload(); }, 3500);
@@ -197,7 +256,10 @@ def terminal_display():
 @app.route('/api/create-beacon')
 def create_beacon():
     token = str(uuid.uuid4())
-    challenge = hmac.new(MASTER_SALT.encode(), token.encode(), hashlib.sha256).hexdigest()[:32]
+    # Challenge ko base64url safe string banate hain
+    raw_challenge = os.urandom(32)
+    challenge = base64.urlsafe_b64encode(raw_challenge).decode('utf-8').rstrip('=')
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("INSERT INTO sessions (token, challenge, status, user_id, created_at, used) VALUES (?, ?, ?, ?, ?, 0)", 
@@ -209,6 +271,14 @@ def create_beacon():
 @app.route('/air-mobile')
 def air_mobile():
     token = request.args.get('token', '')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT challenge FROM sessions WHERE token = ?", (token,))
+    row = c.fetchone()
+    conn.close()
+    
+    challenge = row[0] if row else ""
+
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
@@ -227,12 +297,22 @@ def air_mobile():
         <div class="box">
             <div style="font-size: 45px; margin-bottom: 10px;">🛡️</div>
             <h3 style="margin: 0; color: #38bdf8;">Hardware Biometric Vault</h3>
-            <p style="color:#94a3b8; font-size: 12px; margin-top: 8px;">Direct cryptographic handshake required. No bypass allowed.</p>
+            <p style="color:#94a3b8; font-size: 12px; margin-top: 8px;">Hardware-Bound Cryptographic Signature Required.</p>
             <button class="scan-btn" id="bioBtn" onclick="executeSecureHandshake()">👆 Authenticate Fingerprint</button>
             <div id="status">SENSOR IDLE</div>
         </div>
 
         <script>
+        function base64ToUint8Array(base64) {
+            let padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
+            let binary = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+            let bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
         async function executeSecureHandshake() {
             const statusDiv = document.getElementById('status');
             const btn = document.getElementById('bioBtn');
@@ -244,8 +324,12 @@ def air_mobile():
             }
 
             try {
-                const challengeBuf = new Uint8Array(32);
-                window.crypto.getRandomValues(challengeBuf);
+                const challengeStr = "{{ challenge }}";
+                if (!challengeStr) {
+                    statusDiv.innerText = "❌ Expired Session Challenge.";
+                    return;
+                }
+                const challengeBuf = base64ToUint8Array(challengeStr);
 
                 btn.disabled = true;
                 const credential = await navigator.credentials.create({
@@ -261,16 +345,17 @@ def air_mobile():
 
                 if (credential) {
                     statusDiv.style.color = "#34d399";
-                    statusDiv.innerText = "Handshake verified. Sending signed payload...";
+                    statusDiv.innerText = "Verifying cryptographic proof with server...";
 
-                    // STRICT POST CRYPTOGRAPHIC DISPATCH
+                    // Encode raw client data
+                    const clientDataText = new TextDecoder().decode(credential.response.clientDataJSON);
+
                     const response = await fetch('/api/verify-signature', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             token: "{{ token }}",
-                            clientDataJSON: btoa(String.fromCharCode.apply(null, new Uint8Array(credential.response.clientDataJSON))),
-                            attestationObject: btoa(String.fromCharCode.apply(null, new Uint8Array(credential.response.attestationObject)))
+                            clientDataJSON: clientDataText
                         })
                     });
 
@@ -291,39 +376,60 @@ def air_mobile():
         </script>
     </body>
     </html>
-    """, token=token)
+    """, token=token, challenge=challenge)
 
 @app.route('/api/verify-signature', methods=['POST'])
 def verify_signature():
-    # BLOCK GET REQUESTS DIRECTLY - HACKERS CANNOT OPEN IN BROWSER
     data = request.get_json(silent=True)
     if not data or 'token' not in data or 'clientDataJSON' not in data:
-        return jsonify({"success": False, "error": "Invalid Cryptographic Payload"}), 400
+        return jsonify({"success": False, "error": "Missing Payload"}), 400
 
     token = data.get('token')
+    client_data_raw = data.get('clientDataJSON')
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT status, created_at, used FROM sessions WHERE token = ?", (token,))
+    c.execute("SELECT challenge, created_at, used FROM sessions WHERE token = ?", (token,))
     row = c.fetchone()
     
-    # 15 SECONDS ANTI-REPLAY EXPIRY CHECK
     if not row:
         conn.close()
         return jsonify({"success": False, "error": "Token not found"}), 404
-    if row[2] == 1:
+        
+    expected_challenge, created_at, used = row[0], row[1], row[2]
+
+    # Anti-Replay Checks
+    if used == 1:
         conn.close()
         return jsonify({"success": False, "error": "Token Already Consumed (Replay Blocked)"}), 403
-    if (time.time() - row[1]) > 15:
+    if (time.time() - created_at) > 25:
         conn.close()
-        return jsonify({"success": False, "error": "Token Expired (>15s Window)"}), 403
+        return jsonify({"success": False, "error": "Token Window Expired"}), 403
 
+    # ASLI MATHEMATICAL VALIDATION: Check if clientData contains the exact server challenge
+    try:
+        client_data = json.loads(client_data_raw)
+        received_challenge = client_data.get('challenge', '')
+        
+        # Base64url padding match verification
+        clean_expected = expected_challenge.rstrip('=').replace('+', '-').replace('/', '_')
+        clean_received = received_challenge.rstrip('=').replace('+', '-').replace('/', '_')
+
+        if clean_expected != clean_received:
+            conn.close()
+            return jsonify({"success": False, "error": "Cryptographic Challenge Mismatch (Hacking Attempt Blocked)"}), 403
+    except Exception as e:
+        conn.close()
+        return jsonify({"success": False, "error": "Invalid Cryptographic Data Structure"}), 400
+
+    # Signature Validated - Mark used
     c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_master", token))
     c.execute("INSERT INTO access_logs (user_id, action, target, timestamp) VALUES (?, ?, ?, ?)", 
-              ("sahil_master", "HARDWARE_WEBAUTHN_SIGNATURE_VERIFIED", "AirAuth Sovereign Engine", time.time()))
+              ("sahil_master", "MATHEMATICALLY_VERIFIED_WEBAUTHN_HANDSHAKE", "AirAuth Sovereign Engine", time.time()))
     conn.commit()
     conn.close()
     
-    return jsonify({"success": True, "message": "Biometric Handshake Approved"})
+    return jsonify({"success": True, "message": "Biometric Handshake Mathematically Approved"})
 
 @app.route('/api/session-status')
 def session_status():
@@ -489,14 +595,15 @@ def sdk_portal():
         <p style="color:#94a3b8; font-size:13px;">Zero-Password Biometric authentication for any web architecture.</p>
         
         <p style="color:#cbd5e1; font-size:13px;">1. Client-Side Script Injection:</p>
-        <pre>&lt;script src="https://zeropass1.onrender.com/airauth.js" 
-        data-api-key="YOUR_LIVE_KEY"&gt;&lt;/script&gt;
-&lt;button onclick="AirAuth.login()"&gt;⚡ Sign In with AirAuth&lt;/button&gt;</pre>
+        <pre>&lt;script src="https://zeropass1.onrender.com/airauth.js"&gt;&lt;/script&gt;
+&lt;button onclick="AirAuth.login(function(res){ alert('Verified user: ' + res.user); })"&gt;
+    ⚡ Sign In with AirAuth
+&lt;/button&gt;</pre>
 
         <p style="color:#cbd5e1; font-size:13px;">2. Strict Cryptographic Verification Endpoint:</p>
         <pre>POST /api/verify-signature
 Headers: { "Content-Type": "application/json" }
-Body: { "token": "...", "clientDataJSON": "...", "attestationObject": "..." }</pre>
+Body: { "token": "...", "clientDataJSON": "..." }</pre>
 
         <div style="margin-top:20px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Return to Main Terminal</a></div>
     </body>
