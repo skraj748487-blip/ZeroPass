@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template_string, Response
+from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for
 import uuid
 import os
 import time
@@ -13,6 +13,7 @@ app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 MASTER_SALT = os.urandom(16).hex()
 REAL_UPI_ID = "7484878440-2@ybl"
+ADMIN_PIN = "7484"  # Aapka secret admin pin
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -22,7 +23,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS access_logs 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, action TEXT, target TEXT, timestamp REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS subscriptions 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, client_email TEXT, plan_name TEXT, api_key TEXT, status TEXT, created_at REAL)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, client_email TEXT, plan_name TEXT, utr TEXT, api_key TEXT, status TEXT, created_at REAL)''')
     conn.commit()
     conn.close()
 
@@ -33,8 +34,9 @@ def serve_sdk():
     js_code = """
     (function() {
         window.AirAuth = {
-            init: function(apiKey) {
-                this.apiKey = apiKey;
+            apiKey: null,
+            init: function(key) {
+                this.apiKey = key;
             },
             login: function(callback) {
                 const overlay = document.createElement('div');
@@ -190,7 +192,7 @@ def terminal_display():
             <div class="nav-bar">
                 <a href="/pricing" class="active">💎 Commercial Plans</a>
                 <a href="/sdk-portal">🔌 1-Line SDK</a>
-                <a href="/admin">🏢 Audit Logs</a>
+                <a href="/admin">🏢 Settlement Vault</a>
             </div>
         </div>
 
@@ -507,7 +509,7 @@ def checkout_page():
             .box { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 20px; max-width: 380px; width: 100%; text-align: center; }
             .qr-mock { background: #fff; padding: 15px; border-radius: 12px; display: inline-block; margin: 15px 0; }
             .btn { width: 100%; padding: 12px; background: #059669; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; }
-            input { width: 100%; padding: 10px; margin: 10px 0; background: #020617; border: 1px solid #334155; color: #fff; border-radius: 8px; box-sizing: border-box; }
+            input { width: 100%; padding: 10px; margin: 8px 0; background: #020617; border: 1px solid #334155; color: #fff; border-radius: 8px; box-sizing: border-box; }
         </style>
     </head>
     <body>
@@ -522,11 +524,11 @@ def checkout_page():
             <p style="color:#34d399; font-size: 11px;">Payee: {{ upi_id }}</p>
             <p style="color:#94a3b8; font-size: 10px;">Scan via PhonePe / GPay / Paytm</p>
 
-            <form action="/activate-license" method="POST">
-                <input type="email" name="email" placeholder="Enter Company/Owner Email" required>
-                <input type="text" name="utr" placeholder="Enter UPI UTR / Ref Number" required>
+            <form action="/submit-payment" method="POST">
+                <input type="email" name="email" placeholder="Your Official Email" required>
+                <input type="text" name="utr" placeholder="12-Digit UPI Ref / UTR Number" required>
                 <input type="hidden" name="plan" value="{{ plan }}">
-                <button type="submit" class="btn">⚡ Verify UTR & Issue API Key</button>
+                <button type="submit" class="btn">⚡ Submit Payment for Activation</button>
             </form>
             <div style="margin-top:15px;"><a href="/pricing" style="color:#64748b; font-size:12px; text-decoration:none;">← Return</a></div>
         </div>
@@ -534,17 +536,19 @@ def checkout_page():
     </html>
     """, plan=plan, price=price, upi_payment_url=upi_payment_url, upi_id=REAL_UPI_ID)
 
-@app.route('/activate-license', methods=['POST'])
-def activate_license():
+@app.route('/submit-payment', methods=['POST'])
+def submit_payment():
     email = request.form.get('email')
     plan = request.form.get('plan')
-    utr = request.form.get('utr', 'DIRECT')
-    api_key = "airauth_live_" + uuid.uuid4().hex[:18]
+    utr = request.form.get('utr', '').strip()
+    
+    # Pre-generate key, par status rahega PENDING_VERIFICATION
+    temp_key = "airauth_live_" + uuid.uuid4().hex[:18]
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO subscriptions (client_email, plan_name, api_key, status, created_at) VALUES (?, ?, ?, ?, ?)",
-              (email, f"{plan} [UTR:{utr[:10]}]", api_key, 'ACTIVE', time.time()))
+    c.execute("INSERT INTO subscriptions (client_email, plan_name, utr, api_key, status, created_at) VALUES (?, ?, ?, ?, 'PENDING_VERIFICATION', ?)",
+              (email, plan, utr, temp_key, time.time()))
     conn.commit()
     conn.close()
 
@@ -554,26 +558,26 @@ def activate_license():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>License Live // AirAuth</title>
+        <title>Payment Under Review // AirAuth</title>
         <style>
             body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .box { background: #0f172a; border: 1px solid #059669; padding: 30px; border-radius: 20px; max-width: 440px; width: 100%; text-align: center; }
-            .key-box { background: #020617; border: 1px dashed #34d399; color: #34d399; padding: 12px; border-radius: 8px; margin: 15px 0; word-break: break-all; font-weight: bold; }
+            .box { background: #0f172a; border: 1px solid #f59e0b; padding: 30px; border-radius: 20px; max-width: 440px; width: 100%; text-align: center; }
         </style>
     </head>
     <body>
         <div class="box">
-            <h2 style="color:#34d399; margin: 0;">🎉 Commercial License Activated</h2>
-            <p style="color:#94a3b8; font-size: 13px;">Subscribed account: <b>{{ email }}</b></p>
-            
-            <div style="font-size: 12px; color: #cbd5e1; text-align: left;">Live Secret API Key:</div>
-            <div class="key-box">{{ api_key }}</div>
-
-            <a href="/sdk-portal" style="display:inline-block; padding:10px 18px; background:#0284c7; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold; font-size:12px;">Access Integration Docs →</a>
+            <div style="font-size: 50px; margin-bottom: 10px;">⏳</div>
+            <h2 style="color:#f59e0b; margin: 0;">Payment Submitted</h2>
+            <p style="color:#94a3b8; font-size: 13px; line-height: 1.6;">
+                UTR: <b>{{ utr }}</b> has been recorded.<br>
+                Bank reconciliation is underway. Your API Key will be unlocked once settlement is verified by Sahil Ahmad.
+            </p>
+            <div style="font-size: 11px; color: #64748b; margin-top: 15px;">Target Delivery: {{ email }}</div>
+            <a href="/" style="display:inline-block; margin-top: 20px; padding:10px 18px; background:#0284c7; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold; font-size:12px;">Return to Terminal</a>
         </div>
     </body>
     </html>
-    """, email=email, api_key=api_key)
+    """, email=email, utr=utr)
 
 @app.route('/sdk-portal')
 def sdk_portal():
@@ -611,47 +615,98 @@ Body: { "token": "...", "clientDataJSON": "..." }</pre>
 
 @app.route('/admin')
 def admin_panel():
+    pin = request.args.get('pin', '')
+    if pin != ADMIN_PIN:
+        return render_template_string("""
+        <!DOCTYPE html>
+        <html><body style="background:#020617;color:#fff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;">
+            <form method="GET" style="background:#0f172a;padding:30px;border-radius:16px;border:1px solid #334155;text-align:center;">
+                <h3 style="color:#38bdf8;">Chief Architect Vault</h3>
+                <input type="password" name="pin" placeholder="Enter Secret PIN" style="padding:10px;background:#020617;border:1px solid #334155;color:#fff;border-radius:8px;" required><br><br>
+                <button type="submit" style="padding:10px 20px;background:#0284c7;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">Unlock Control Panel</button>
+            </form>
+        </body></html>
+        """)
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    c.execute("SELECT id, client_email, plan_name, utr, api_key, status FROM subscriptions ORDER BY id DESC")
+    subs = c.fetchall()
     c.execute("SELECT user_id, action, target, timestamp FROM access_logs ORDER BY timestamp DESC LIMIT 8")
     logs = c.fetchall()
-    c.execute("SELECT client_email, plan_name, api_key, status FROM subscriptions ORDER BY id DESC LIMIT 5")
-    subs = c.fetchall()
     conn.close()
+
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Enterprise Portal</title>
+        <title>AirAuth Master Settlement Vault</title>
         <style>
             body { background: #020617; color: #fff; font-family: monospace; padding: 20px; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; background: rgba(15,23,42,0.8); border: 1px solid #0284c7; }
             th, td { padding: 10px; border-bottom: 1px solid #1e293b; text-align: left; font-size: 11px; }
             th { color: #38bdf8; background: rgba(2,132,199,0.2); }
+            .approve-btn { background: #059669; color: #fff; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 11px; font-weight: bold; }
         </style>
     </head>
     <body>
-        <h3>🏢 Commercial Subscribers & API Keys</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="color:#34d399; margin:0;">🏢 Master Settlement & Payment Vault</h2>
+            <a href="/" style="color:#64748b; font-size:12px; text-decoration:none;">← Main Terminal</a>
+        </div>
+        <p style="color:#94a3b8; font-size:12px;">Verify incoming Bank/PhonePe credit before releasing client API Keys.</p>
+
         <table>
-            <tr><th>Client Email</th><th>Plan & UTR</th><th>API Key</th><th>Status</th></tr>
+            <tr><th>Email</th><th>Plan</th><th>Submitted UTR</th><th>API Key</th><th>Status</th><th>Action</th></tr>
             {% for s in subs %}
-            <tr><td>{{ s[0] }}</td><td>{{ s[1] }}</td><td style="color:#38bdf8;">{{ s[2] }}</td><td style="color:#34d399;">{{ s[3] }}</td></tr>
+            <tr>
+                <td>{{ s[1] }}</td>
+                <td>{{ s[2] }}</td>
+                <td style="color:#f59e0b; font-weight:bold;">{{ s[3] }}</td>
+                <td style="color:#38bdf8;">{{ s[4] }}</td>
+                <td>
+                    {% if s[5] == 'ACTIVE' %}
+                        <span style="color:#34d399; font-weight:bold;">ACTIVE</span>
+                    {% else %}
+                        <span style="color:#ef4444; font-weight:bold;">PENDING</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if s[5] != 'ACTIVE' %}
+                        <a href="/admin/approve?id={{ s[0] }}&pin={{ pin }}" class="approve-btn">Approve & Issue Key</a>
+                    {% else %}
+                        <span style="color:#64748b;">Released</span>
+                    {% endif %}
+                </td>
+            </tr>
             {% endfor %}
         </table>
 
-        <h3 style="margin-top:30px;">🛡️ Real-Time Biometric Audit Logs</h3>
+        <h3 style="margin-top:35px;">🛡️ Real-Time Biometric Audit Logs</h3>
         <table>
             <tr><th>USER SIGNATURE</th><th>EVENT</th><th>TARGET</th></tr>
             {% for l in logs %}
             <tr><td>{{ l[0] }}</td><td style="color:#34d399;">{{ l[1] }}</td><td>{{ l[2] }}</td></tr>
             {% endfor %}
         </table>
-        <div style="margin-top:15px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Back to Terminal</a></div>
     </body>
     </html>
-    """, logs=logs, subs=subs)
+    """, subs=subs, logs=logs, pin=ADMIN_PIN)
+
+@app.route('/admin/approve')
+def approve_subscription():
+    pin = request.args.get('pin', '')
+    if pin != ADMIN_PIN:
+        return "Unauthorized", 401
+    sub_id = request.args.get('id')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE subscriptions SET status = 'ACTIVE' WHERE id = ?", (sub_id,))
+    conn.commit()
+    conn.close()
+    return redirect(f"/admin?pin={ADMIN_PIN}")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
