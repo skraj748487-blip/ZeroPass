@@ -1,30 +1,45 @@
-# ⚡ ZeroPass: AirAuth (Ghost-Pass) v2.0
-> **World's First Proximity-Driven Zero-Password & Contactless Authentication Protocol**
+# GhostKey Protocol
+### Pure-Software Hardware-Bound Biometric Sovereign Identity
+Engineered by Sahil Ahmad // Chief Architect
 
-ZeroPass replaces vulnerable passwords, SMS OTPs, and cumbersome QR codes with physical proximity beacons, asymmetric hardware cryptography (RSA-2048), and platform biometrics.
+## Overview
+GhostKey Protocol is a decentralized identity substrate designed to eliminate passwords, SMS OTPs, and credential stuffing attacks entirely.
 
----
+By anchoring session entropy directly to physical device Hardware Security Modules (Secure Enclave / Android KeyStore) via WebAuthn, GhostKey provides non-repudiable biometric authentication without storing raw biometrics on remote servers.
 
-## 🌟 Key Architecture & Highlights
+Technical Whitepaper: WHITEPAPER.md
 
-* **👻 Ghost-Pass Proximity Engine:** Authenticates users through airborne beacon sync without needing to type passwords or scan QR codes.
-* **🚶 Walk-Away Auto-Lock:** Automatically secures and terminates the active session when physical proximity is broken.
-* **🛡️ AI Anomaly & Replay Shield:** Hardware token verification with strict 60-second expiration to prevent session replay or interception.
-* **🔐 RSA-2048 Cryptography:** Zero passwords stored on servers. Uses client-side private keys and server-side public signature verification.
-* **⚡ 2-Line Integration:** Ready-to-use SDK for rapid deployment across any web platform or enterprise kiosk.
+## Quickstart: Developer Integration
 
----
+### 1. Client-Side Script Injection
+Add the lightweight GhostKey SDK before your closing body tag:
 
-## 🛠️ Tech Stack
+<script src="https://zeropass1.onrender.com/airauth.js"></script>
+<button onclick="GhostKeyLogin()">Sign In with GhostKey</button>
 
-* **Backend:** Python, Flask, SQLite
-* **Cryptography:** PyCryptodome (RSA-2048, SHA-256 PKCS#1 v1.5)
-* **Frontend:** WebAuthn API, Responsive Cyber-Radar UI
-* **Deployment:** Cloud-hosted on Render
+<script>
+function GhostKeyLogin() {
+    AirAuth.login(function(response) {
+        if (response.success) {
+            console.log("Verified Identity:", response.user);
+            console.log("Cryptographic Proof Token:", response.token);
+        }
+    });
+}
+</script>
 
----
+### 2. Server-to-Server Verification (API)
+POST https://zeropass1.onrender.com/api/v1/verify-credential
+Header: Content-Type: application/json
+Header: X-GhostKey-Secret: YOUR_API_KEY
+Body: {"token": "VERIFIED_SESSION_TOKEN"}
 
-## 🚀 Live Demo
+Response:
+{
+  "valid": true,
+  "user_id": "sahil_master",
+  "verification_type": "HARDWARE_SILICON_ENCLAVE"
+}
 
-* **Live Cloud Node:** [https://zeropass1.onrender.com](https://zeropass1.onrender.com)
-* **Author:** Sahil Ahmad
+## License
+Engineered and maintained by Sahil Ahmad.
