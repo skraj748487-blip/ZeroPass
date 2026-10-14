@@ -710,3 +710,53 @@ def approve_subscription():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
+@app.route('/playground')
+def playground():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GhostKey // Interactive Developer Playground</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+            .box { background: #0f172a; border: 2px solid #0284c7; border-radius: 20px; padding: 35px; max-width: 450px; width: 100%; text-align: center; box-shadow: 0 0 40px rgba(2,132,199,0.3); }
+            .btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #0284c7, #2563eb); border: none; border-radius: 12px; color: #fff; font-weight: bold; font-size: 15px; cursor: pointer; margin-top: 20px; }
+            #output { margin-top: 20px; padding: 12px; background: #020617; border: 1px dashed #334155; border-radius: 8px; font-size: 12px; color: #94a3b8; text-align: left; word-break: break-all; min-height: 40px; }
+        </style>
+        <script src="/airauth.js"></script>
+    </head>
+    <body>
+        <div class="box">
+            <div style="font-size: 11px; color: #38bdf8; margin-bottom: 5px;">⚡ DEVELOPER SANDBOX</div>
+            <h2 style="margin: 0 0 10px 0; color: #fff;">Test Biometric Drop-in</h2>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">Click below to simulate real-time client SDK execution.</p>
+            
+            <button class="btn" onclick="runSandboxTest()">⚡ Trigger GhostKey Auth Modal</button>
+            
+            <div id="output">// Awaiting user interaction...</div>
+            <div style="margin-top: 20px;"><a href="/" style="color: #64748b; font-size: 12px; text-decoration: none;">← Return to Main Terminal</a></div>
+        </div>
+
+        <script>
+        function runSandboxTest() {
+            const out = document.getElementById('output');
+            out.style.color = '#f59e0b';
+            out.innerText = 'Initializing client-side AirAuth modal...';
+            
+            AirAuth.login(function(res) {
+                if (res.success) {
+                    out.style.color = '#34d399';
+                    out.innerHTML = '<b>SUCCESS!</b><br>User: ' + res.user + '<br>Token: ' + res.token;
+                } else {
+                    out.style.color = '#ef4444';
+                    out.innerText = 'Handshake Failed / Cancelled';
+                }
+            });
+        }
+        </script>
+    </body>
+    </html>
+    """)
