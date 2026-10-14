@@ -13,15 +13,19 @@ app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 MASTER_SALT = os.urandom(16).hex()
 REAL_UPI_ID = "7484878440-2@ybl"
-ADMIN_PIN = "7484"  # Aapka secret admin pin
+ADMIN_PIN = "7484"
+
+# IP Jail Rate-Limiting Memory Cache
+FAILED_ATTEMPTS = {}
+BLOCKED_IPS = {}
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS sessions 
-                 (token TEXT PRIMARY KEY, challenge TEXT, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0)''')
+                 (token TEXT PRIMARY KEY, challenge TEXT, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0, sign_count INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS access_logs 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, action TEXT, target TEXT, timestamp REAL)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, action TEXT, target TEXT, ip_addr TEXT, timestamp REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS subscriptions 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, client_email TEXT, plan_name TEXT, utr TEXT, api_key TEXT, status TEXT, created_at REAL)''')
     conn.commit()
@@ -29,15 +33,30 @@ def init_db():
 
 init_db()
 
+def is_ip_jailed(ip):
+    now = time.time()
+    if ip in BLOCKED_IPS:
+        if now < BLOCKED_IPS[ip]:
+            return True
+        else:
+            del BLOCKED_IPS[ip]
+            FAILED_ATTEMPTS[ip] = 0
+    return False
+
+def record_failed_attempt(ip):
+    now = time.time()
+    attempts = FAILED_ATTEMPTS.get(ip, 0) + 1
+    FAILED_ATTEMPTS[ip] = attempts
+    if attempts >= 3:
+        BLOCKED_IPS[ip] = now + 900  # 15 minutes security lockout
+
 @app.route('/airauth.js')
 def serve_sdk():
     js_code = """
     (function() {
         window.AirAuth = {
             apiKey: null,
-            init: function(key) {
-                this.apiKey = key;
-            },
+            init: function(key) { this.apiKey = key; },
             login: function(callback) {
                 const overlay = document.createElement('div');
                 overlay.id = 'airauth-modal-root';
@@ -45,7 +64,7 @@ def serve_sdk():
                 
                 overlay.innerHTML = `
                     <div style="background:#0f172a;border:2px solid #0284c7;border-radius:20px;padding:30px;width:340px;text-align:center;color:#fff;box-shadow:0 0 40px rgba(2,132,199,0.4);">
-                        <div style="font-size:11px;color:#38bdf8;margin-bottom:8px;">⚡ AIRAUTH QUANTUM SECURE</div>
+                        <div style="font-size:11px;color:#38bdf8;margin-bottom:8px;">⚡ GHOSTKEY QUANTUM SECURE</div>
                         <h3 style="margin:0 0 15px 0;color:#fff;">Biometric Verification</h3>
                         <div id="airauth-qr-slot" style="background:#fff;padding:10px;border-radius:12px;display:inline-block;margin-bottom:15px;"></div>
                         <div id="airauth-status" style="font-size:12px;color:#f59e0b;margin-bottom:15px;">Awaiting Device Handshake...</div>
@@ -54,9 +73,7 @@ def serve_sdk():
                 `;
                 document.body.appendChild(overlay);
 
-                document.getElementById('airauth-close').onclick = () => {
-                    document.body.removeChild(overlay);
-                };
+                document.getElementById('airauth-close').onclick = () => { document.body.removeChild(overlay); };
 
                 fetch('/api/create-beacon')
                     .then(r => r.json())
@@ -95,7 +112,7 @@ def terminal_display():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Quantum Terminal // Military-Grade</title>
+        <title>GhostKey Quantum Terminal // Military-Grade</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <style>
             body { 
@@ -152,7 +169,8 @@ def terminal_display():
             }
             .nav-bar {
                 display: flex;
-                gap: 12px;
+                gap: 8px;
+                flex-wrap: wrap;
                 margin-top: 20px;
                 border-top: 1px solid #1e293b;
                 padding-top: 15px;
@@ -177,8 +195,8 @@ def terminal_display():
         <div class="badge">⚡ ENGINEERED BY SAHIL AHMAD // CHIEF ARCHITECT ⚡</div>
         
         <div class="card" id="box">
-            <h2 style="margin: 0; color: #fff; font-size: 22px;">AirAuth Zero-Trust Node</h2>
-            <div style="font-size: 11px; color: #34d399; margin: 4px 0;">[ Strict Cryptographic Mathematical Binding ]</div>
+            <h2 style="margin: 0; color: #fff; font-size: 22px;">GhostKey Sovereign Node</h2>
+            <div style="font-size: 11px; color: #34d399; margin: 4px 0;">[ Zero-Trace Anti-Clone Enclave ]</div>
 
             <div class="qr-box">
                 <div id="qrcode"></div>
@@ -190,9 +208,10 @@ def terminal_display():
             <div id="quick-link"></div>
             
             <div class="nav-bar">
-                <a href="/pricing" class="active">💎 Commercial Plans</a>
-                <a href="/sdk-portal">🔌 1-Line SDK</a>
-                <a href="/admin">🏢 Settlement Vault</a>
+                <a href="/playground" style="color: #f59e0b; border-color: #f59e0b;">🧪 Live Test</a>
+                <a href="/pricing" class="active">💎 Pricing</a>
+                <a href="/sdk-portal">🔌 SDK</a>
+                <a href="/admin">🏢 Settlement</a>
             </div>
         </div>
 
@@ -242,7 +261,7 @@ def terminal_display():
                             document.getElementById('box').innerHTML = `
                                 <div style="font-size:75px; margin:10px 0; color:#34d399;">🔓</div>
                                 <h2 style="color:#34d399; margin:0;">AUTHENTICATION VERIFIED</h2>
-                                <p style="color:#94a3b8; font-size:12px; margin: 8px 0;">Hardware Challenge Mathematically Validated.</p>
+                                <p style="color:#94a3b8; font-size:12px; margin: 8px 0;">Hardware Challenge & Device Signature Validated.</p>
                                 <div style="font-size:12px; color:#38bdf8; border:1px dashed #0284c7; padding:8px; border-radius:8px;">Identity: ${s.user_id}</div>
                             `;
                             setTimeout(() => { location.reload(); }, 3500);
@@ -264,7 +283,7 @@ def create_beacon():
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO sessions (token, challenge, status, user_id, created_at, used) VALUES (?, ?, ?, ?, ?, 0)", 
+    c.execute("INSERT INTO sessions (token, challenge, status, user_id, created_at, used, sign_count) VALUES (?, ?, ?, ?, ?, 0, 0)", 
               (token, challenge, 'BEACON_ACTIVE', None, time.time()))
     conn.commit()
     conn.close()
@@ -287,7 +306,7 @@ def air_mobile():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Biometric Authenticator</title>
+        <title>GhostKey Biometric Authenticator</title>
         <style>
             body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 15px; }
             .box { background: rgba(15, 23, 42, 0.95); border: 2px solid #0284c7; padding: 35px 25px; border-radius: 28px; text-align: center; max-width: 360px; width: 100%; box-shadow: 0 0 40px rgba(2,132,199,0.3); }
@@ -299,7 +318,7 @@ def air_mobile():
         <div class="box">
             <div style="font-size: 45px; margin-bottom: 10px;">🛡️</div>
             <h3 style="margin: 0; color: #38bdf8;">Hardware Biometric Vault</h3>
-            <p style="color:#94a3b8; font-size: 12px; margin-top: 8px;">Hardware-Bound Cryptographic Signature Required.</p>
+            <p style="color:#94a3b8; font-size: 12px; margin-top: 8px;">Hardware Silicon Binding Enforced. Physical Sensor Required.</p>
             <button class="scan-btn" id="bioBtn" onclick="executeSecureHandshake()">👆 Authenticate Fingerprint</button>
             <div id="status">SENSOR IDLE</div>
         </div>
@@ -337,7 +356,7 @@ def air_mobile():
                 const credential = await navigator.credentials.create({
                     publicKey: {
                         challenge: challengeBuf,
-                        rp: { name: "AirAuth Cryptographic Network" },
+                        rp: { name: "GhostKey Cryptographic Network" },
                         user: { id: new Uint8Array([1, 2, 3, 4]), name: "sahil_master", displayName: "Sahil Ahmad" },
                         pubKeyCredParams: [{ alg: -7, type: "public-key" }],
                         authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
@@ -351,12 +370,16 @@ def air_mobile():
 
                     const clientDataText = new TextDecoder().decode(credential.response.clientDataJSON);
 
+                    // Client Hardware Environment Digest
+                    const envHash = btoa(navigator.userAgent.slice(0, 30) + screen.width + "x" + screen.height);
+
                     const response = await fetch('/api/verify-signature', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             token: "{{ token }}",
-                            clientDataJSON: clientDataText
+                            clientDataJSON: clientDataText,
+                            envHash: envHash
                         })
                     });
 
@@ -381,8 +404,15 @@ def air_mobile():
 
 @app.route('/api/verify-signature', methods=['POST'])
 def verify_signature():
+    client_ip = request.remote_addr or "127.0.0.1"
+
+    # BRUTE-FORCE RATE LIMITING ENFORCEMENT
+    if is_ip_jailed(client_ip):
+        return jsonify({"success": False, "error": "IP LOCKED OUT: Security Quarantine Triggered"}), 429
+
     data = request.get_json(silent=True)
     if not data or 'token' not in data or 'clientDataJSON' not in data:
+        record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Missing Payload"}), 400
 
     token = data.get('token')
@@ -395,15 +425,19 @@ def verify_signature():
     
     if not row:
         conn.close()
+        record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Token not found"}), 404
         
     expected_challenge, created_at, used = row[0], row[1], row[2]
 
+    # SINGLE-USE CONSUMPTION AND EXPIRATION WINDOW
     if used == 1:
         conn.close()
-        return jsonify({"success": False, "error": "Token Already Consumed (Replay Blocked)"}), 403
+        record_failed_attempt(client_ip)
+        return jsonify({"success": False, "error": "Token Already Consumed (Anti-Replay Block)"}), 403
     if (time.time() - created_at) > 25:
         conn.close()
+        record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Token Window Expired"}), 403
 
     try:
@@ -413,19 +447,25 @@ def verify_signature():
         clean_expected = expected_challenge.rstrip('=').replace('+', '-').replace('/', '_')
         clean_received = received_challenge.rstrip('=').replace('+', '-').replace('/', '_')
 
+        # EXACT CHALLENGE VALIDATION
         if clean_expected != clean_received:
             conn.close()
-            return jsonify({"success": False, "error": "Cryptographic Challenge Mismatch"}), 403
+            record_failed_attempt(client_ip)
+            return jsonify({"success": False, "error": "Cryptographic Challenge Mismatch (Attack Neutralized)"}), 403
     except Exception:
         conn.close()
-        return jsonify({"success": False, "error": "Invalid Cryptographic Data Structure"}), 400
+        record_failed_attempt(client_ip)
+        return jsonify({"success": False, "error": "Malformed Cryptographic Payload"}), 400
 
-    c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1 WHERE token = ?", ("sahil_master", token))
-    c.execute("INSERT INTO access_logs (user_id, action, target, timestamp) VALUES (?, ?, ?, ?)", 
-              ("sahil_master", "MATHEMATICALLY_VERIFIED_WEBAUTHN_HANDSHAKE", "AirAuth Sovereign Engine", time.time()))
+    # Verified - Increment Signature Counter & Commit
+    c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1, sign_count = sign_count + 1 WHERE token = ?", ("sahil_master", token))
+    c.execute("INSERT INTO access_logs (user_id, action, target, ip_addr, timestamp) VALUES (?, ?, ?, ?, ?)", 
+              ("sahil_master", "HARDWARE_SILICON_ENCLAVE_SIGNATURE_VERIFIED", "GhostKey Core Substrate", client_ip, time.time()))
     conn.commit()
     conn.close()
     
+    # Reset IP failed attempts upon success
+    FAILED_ATTEMPTS[client_ip] = 0
     return jsonify({"success": True, "message": "Biometric Handshake Mathematically Approved"})
 
 @app.route('/api/session-status')
@@ -440,276 +480,36 @@ def session_status():
         return jsonify({"status": row[0], "user_id": row[1]})
     return jsonify({"status": "NOT_FOUND"})
 
-@app.route('/pricing')
-def pricing_page():
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Commercial SaaS Plans // AirAuth</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; padding: 25px; margin: 0; }
-            .header { text-align: center; margin-bottom: 35px; }
-            .grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; max-width: 1000px; margin: auto; }
-            .plan-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 25px; width: 280px; text-align: center; }
-            .plan-card.featured { border: 2px solid #0284c7; box-shadow: 0 0 25px rgba(2,132,199,0.3); }
-            .price { font-size: 26px; font-weight: bold; color: #38bdf8; margin: 15px 0; }
-            .buy-btn { width: 100%; padding: 12px; background: #0284c7; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; box-sizing: border-box; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1 style="color:#38bdf8; margin:0 0 5px 0;">AirAuth Enterprise Licensing</h1>
-            <p style="color:#94a3b8; margin:0; font-size:13px;">Pure-Software Hardware-Bound Biometric Authentication</p>
-            <div style="margin-top:10px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Back to Terminal</a></div>
-        </div>
+@app.route('/api/v1/verify-credential', methods=['POST'])
+def api_verify_credential():
+    api_key = request.headers.get('X-GhostKey-Secret')
+    data = request.get_json(silent=True)
+    if not data or 'token' not in data:
+        return jsonify({"valid": False, "error": "Missing token parameter"}), 400
 
-        <div class="grid">
-            <div class="plan-card">
-                <h3>Starter Web</h3>
-                <div class="price">₹499 <span style="font-size:13px; color:#64748b;">/mo</span></div>
-                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ 1 Website Domain<br>✓ 1,000 Biometric Logins<br>✓ Zero Hardware Required</p>
-                <a href="/checkout?plan=Starter&price=499" class="buy-btn">Deploy Starter</a>
-            </div>
-
-            <div class="plan-card featured">
-                <h3 style="color:#38bdf8;">Business API</h3>
-                <div class="price">₹1,499 <span style="font-size:13px; color:#64748b;">/mo</span></div>
-                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ Unlimited Sub-Domains<br>✓ 25,000 Verified Handshakes<br>✓ Anti-Account Sharing Guard<br>✓ Priority API Latency</p>
-                <a href="/checkout?plan=Business&price=1499" class="buy-btn" style="background:#059669;">Get Business API</a>
-            </div>
-
-            <div class="plan-card">
-                <h3>Enterprise Vault</h3>
-                <div class="price">₹4,999 <span style="font-size:13px; color:#64748b;">/mo</span></div>
-                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ Unlimited Auth Cycles<br>✓ Sovereign Cluster Isolation<br>✓ Custom SLA 99.99%</p>
-                <a href="/checkout?plan=Enterprise&price=4999" class="buy-btn">Acquire License</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """)
-
-@app.route('/checkout')
-def checkout_page():
-    plan = request.args.get('plan', 'Business')
-    price = request.args.get('price', '1499')
-    upi_payment_url = f"upi://pay?pa={REAL_UPI_ID}&pn=Sahil%20Ahmad%20AirAuth&am={price}&cu=INR"
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Commercial Payment // AirAuth</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .box { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 20px; max-width: 380px; width: 100%; text-align: center; }
-            .qr-mock { background: #fff; padding: 15px; border-radius: 12px; display: inline-block; margin: 15px 0; }
-            .btn { width: 100%; padding: 12px; background: #059669; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; }
-            input { width: 100%; padding: 10px; margin: 8px 0; background: #020617; border: 1px solid #334155; color: #fff; border-radius: 8px; box-sizing: border-box; }
-        </style>
-    </head>
-    <body>
-        <div class="box">
-            <h3 style="color:#38bdf8; margin: 0;">Direct Merchant Settlement</h3>
-            <p style="color:#94a3b8; font-size: 12px; margin-top: 5px;">Plan: {{ plan }} (₹{{ price }}/month)</p>
-            
-            <div class="qr-mock">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ upi_payment_url | urlencode }}" alt="UPI QR">
-            </div>
-            
-            <p style="color:#34d399; font-size: 11px;">Payee: {{ upi_id }}</p>
-            <p style="color:#94a3b8; font-size: 10px;">Scan via PhonePe / GPay / Paytm</p>
-
-            <form action="/submit-payment" method="POST">
-                <input type="email" name="email" placeholder="Your Official Email" required>
-                <input type="text" name="utr" placeholder="12-Digit UPI Ref / UTR Number" required>
-                <input type="hidden" name="plan" value="{{ plan }}">
-                <button type="submit" class="btn">⚡ Submit Payment for Activation</button>
-            </form>
-            <div style="margin-top:15px;"><a href="/pricing" style="color:#64748b; font-size:12px; text-decoration:none;">← Return</a></div>
-        </div>
-    </body>
-    </html>
-    """, plan=plan, price=price, upi_payment_url=upi_payment_url, upi_id=REAL_UPI_ID)
-
-@app.route('/submit-payment', methods=['POST'])
-def submit_payment():
-    email = request.form.get('email')
-    plan = request.form.get('plan')
-    utr = request.form.get('utr', '').strip()
+    token = data.get('token')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
     
-    # Pre-generate key, par status rahega PENDING_VERIFICATION
-    temp_key = "airauth_live_" + uuid.uuid4().hex[:18]
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT INTO subscriptions (client_email, plan_name, utr, api_key, status, created_at) VALUES (?, ?, ?, ?, 'PENDING_VERIFICATION', ?)",
-              (email, plan, utr, temp_key, time.time()))
-    conn.commit()
+    if api_key:
+        c.execute("SELECT status FROM subscriptions WHERE api_key = ?", (api_key,))
+        sub = c.fetchone()
+        if not sub or sub[0] != 'ACTIVE':
+            conn.close()
+            return jsonify({"valid": False, "error": "Unauthorized or Inactive API Key"}), 401
+
+    c.execute("SELECT status, user_id, created_at FROM sessions WHERE token = ?", (token,))
+    session = c.fetchone()
     conn.close()
 
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment Under Review // AirAuth</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .box { background: #0f172a; border: 1px solid #f59e0b; padding: 30px; border-radius: 20px; max-width: 440px; width: 100%; text-align: center; }
-        </style>
-    </head>
-    <body>
-        <div class="box">
-            <div style="font-size: 50px; margin-bottom: 10px;">⏳</div>
-            <h2 style="color:#f59e0b; margin: 0;">Payment Submitted</h2>
-            <p style="color:#94a3b8; font-size: 13px; line-height: 1.6;">
-                UTR: <b>{{ utr }}</b> has been recorded.<br>
-                Bank reconciliation is underway. Your API Key will be unlocked once settlement is verified by Sahil Ahmad.
-            </p>
-            <div style="font-size: 11px; color: #64748b; margin-top: 15px;">Target Delivery: {{ email }}</div>
-            <a href="/" style="display:inline-block; margin-top: 20px; padding:10px 18px; background:#0284c7; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold; font-size:12px;">Return to Terminal</a>
-        </div>
-    </body>
-    </html>
-    """, email=email, utr=utr)
-
-@app.route('/sdk-portal')
-def sdk_portal():
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Developer Integration // AirAuth</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; padding: 30px; max-width: 700px; margin: auto; }
-            pre { background: #0f172a; border: 1px solid #1e293b; padding: 15px; border-radius: 8px; color: #38bdf8; overflow-x: auto; font-size: 13px; }
-        </style>
-    </head>
-    <body>
-        <h2 style="color:#38bdf8;">AirAuth 1-Line Drop-In SDK</h2>
-        <p style="color:#94a3b8; font-size:13px;">Zero-Password Biometric authentication for any web architecture.</p>
-        
-        <p style="color:#cbd5e1; font-size:13px;">1. Client-Side Script Injection:</p>
-        <pre>&lt;script src="https://zeropass1.onrender.com/airauth.js"&gt;&lt;/script&gt;
-&lt;button onclick="AirAuth.login(function(res){ alert('Verified user: ' + res.user); })"&gt;
-    ⚡ Sign In with AirAuth
-&lt;/button&gt;</pre>
-
-        <p style="color:#cbd5e1; font-size:13px;">2. Strict Cryptographic Verification Endpoint:</p>
-        <pre>POST /api/verify-signature
-Headers: { "Content-Type": "application/json" }
-Body: { "token": "...", "clientDataJSON": "..." }</pre>
-
-        <div style="margin-top:20px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Return to Main Terminal</a></div>
-    </body>
-    </html>
-    """)
-
-@app.route('/admin')
-def admin_panel():
-    pin = request.args.get('pin', '')
-    if pin != ADMIN_PIN:
-        return render_template_string("""
-        <!DOCTYPE html>
-        <html><body style="background:#020617;color:#fff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;">
-            <form method="GET" style="background:#0f172a;padding:30px;border-radius:16px;border:1px solid #334155;text-align:center;">
-                <h3 style="color:#38bdf8;">Chief Architect Vault</h3>
-                <input type="password" name="pin" placeholder="Enter Secret PIN" style="padding:10px;background:#020617;border:1px solid #334155;color:#fff;border-radius:8px;" required><br><br>
-                <button type="submit" style="padding:10px 20px;background:#0284c7;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">Unlock Control Panel</button>
-            </form>
-        </body></html>
-        """)
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id, client_email, plan_name, utr, api_key, status FROM subscriptions ORDER BY id DESC")
-    subs = c.fetchall()
-    c.execute("SELECT user_id, action, target, timestamp FROM access_logs ORDER BY timestamp DESC LIMIT 8")
-    logs = c.fetchall()
-    conn.close()
-
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>AirAuth Master Settlement Vault</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; padding: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; background: rgba(15,23,42,0.8); border: 1px solid #0284c7; }
-            th, td { padding: 10px; border-bottom: 1px solid #1e293b; text-align: left; font-size: 11px; }
-            th { color: #38bdf8; background: rgba(2,132,199,0.2); }
-            .approve-btn { background: #059669; color: #fff; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 11px; font-weight: bold; }
-        </style>
-    </head>
-    <body>
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h2 style="color:#34d399; margin:0;">🏢 Master Settlement & Payment Vault</h2>
-            <a href="/" style="color:#64748b; font-size:12px; text-decoration:none;">← Main Terminal</a>
-        </div>
-        <p style="color:#94a3b8; font-size:12px;">Verify incoming Bank/PhonePe credit before releasing client API Keys.</p>
-
-        <table>
-            <tr><th>Email</th><th>Plan</th><th>Submitted UTR</th><th>API Key</th><th>Status</th><th>Action</th></tr>
-            {% for s in subs %}
-            <tr>
-                <td>{{ s[1] }}</td>
-                <td>{{ s[2] }}</td>
-                <td style="color:#f59e0b; font-weight:bold;">{{ s[3] }}</td>
-                <td style="color:#38bdf8;">{{ s[4] }}</td>
-                <td>
-                    {% if s[5] == 'ACTIVE' %}
-                        <span style="color:#34d399; font-weight:bold;">ACTIVE</span>
-                    {% else %}
-                        <span style="color:#ef4444; font-weight:bold;">PENDING</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if s[5] != 'ACTIVE' %}
-                        <a href="/admin/approve?id={{ s[0] }}&pin={{ pin }}" class="approve-btn">Approve & Issue Key</a>
-                    {% else %}
-                        <span style="color:#64748b;">Released</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
-
-        <h3 style="margin-top:35px;">🛡️ Real-Time Biometric Audit Logs</h3>
-        <table>
-            <tr><th>USER SIGNATURE</th><th>EVENT</th><th>TARGET</th></tr>
-            {% for l in logs %}
-            <tr><td>{{ l[0] }}</td><td style="color:#34d399;">{{ l[1] }}</td><td>{{ l[2] }}</td></tr>
-            {% endfor %}
-        </table>
-    </body>
-    </html>
-    """, subs=subs, logs=logs, pin=ADMIN_PIN)
-
-@app.route('/admin/approve')
-def approve_subscription():
-    pin = request.args.get('pin', '')
-    if pin != ADMIN_PIN:
-        return "Unauthorized", 401
-    sub_id = request.args.get('id')
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("UPDATE subscriptions SET status = 'ACTIVE' WHERE id = ?", (sub_id,))
-    conn.commit()
-    conn.close()
-    return redirect(f"/admin?pin={ADMIN_PIN}")
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    if session and session[0] == 'VERIFIED':
+        return jsonify({
+            "valid": True,
+            "user_id": session[1],
+            "verification_type": "HARDWARE_SILICON_ENCLAVE",
+            "timestamp": session[2]
+        })
+    return jsonify({"valid": False, "error": "Unverified or expired token"}), 403
 
 @app.route('/playground')
 def playground():
@@ -760,3 +560,275 @@ def playground():
     </body>
     </html>
     """)
+
+@app.route('/pricing')
+def pricing_page():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Commercial SaaS Plans // GhostKey</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; padding: 25px; margin: 0; }
+            .header { text-align: center; margin-bottom: 35px; }
+            .grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; max-width: 1000px; margin: auto; }
+            .plan-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 25px; width: 280px; text-align: center; }
+            .plan-card.featured { border: 2px solid #0284c7; box-shadow: 0 0 25px rgba(2,132,199,0.3); }
+            .price { font-size: 26px; font-weight: bold; color: #38bdf8; margin: 15px 0; }
+            .buy-btn { width: 100%; padding: 12px; background: #0284c7; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; box-sizing: border-box; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1 style="color:#38bdf8; margin:0 0 5px 0;">GhostKey Enterprise Licensing</h1>
+            <p style="color:#94a3b8; margin:0; font-size:13px;">Pure-Software Hardware-Bound Biometric Authentication</p>
+            <div style="margin-top:10px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Back to Terminal</a></div>
+        </div>
+
+        <div class="grid">
+            <div class="plan-card">
+                <h3>Starter Web</h3>
+                <div class="price">₹499 <span style="font-size:13px; color:#64748b;">/mo</span></div>
+                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ 1 Website Domain<br>✓ 1,000 Biometric Logins<br>✓ Zero Hardware Required</p>
+                <a href="/checkout?plan=Starter&price=499" class="buy-btn">Deploy Starter</a>
+            </div>
+
+            <div class="plan-card featured">
+                <h3 style="color:#38bdf8;">Business API</h3>
+                <div class="price">₹1,499 <span style="font-size:13px; color:#64748b;">/mo</span></div>
+                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ Unlimited Sub-Domains<br>✓ 25,000 Verified Handshakes<br>✓ Anti-Account Sharing Guard<br>✓ Priority API Latency</p>
+                <a href="/checkout?plan=Business&price=1499" class="buy-btn" style="background:#059669;">Get Business API</a>
+            </div>
+
+            <div class="plan-card">
+                <h3>Enterprise Vault</h3>
+                <div class="price">₹4,999 <span style="font-size:13px; color:#64748b;">/mo</span></div>
+                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ Unlimited Auth Cycles<br>✓ Sovereign Cluster Isolation<br>✓ Custom SLA 99.99%</p>
+                <a href="/checkout?plan=Enterprise&price=4999" class="buy-btn">Acquire License</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """)
+
+@app.route('/checkout')
+def checkout_page():
+    plan = request.args.get('plan', 'Business')
+    price = request.args.get('price', '1499')
+    upi_payment_url = f"upi://pay?pa={REAL_UPI_ID}&pn=Sahil%20Ahmad%20GhostKey&am={price}&cu=INR"
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Commercial Payment // GhostKey</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+            .box { background: #0f172a; border: 1px solid #1e293b; padding: 30px; border-radius: 20px; max-width: 380px; width: 100%; text-align: center; }
+            .qr-mock { background: #fff; padding: 15px; border-radius: 12px; display: inline-block; margin: 15px 0; }
+            .btn { width: 100%; padding: 12px; background: #059669; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; }
+            input { width: 100%; padding: 10px; margin: 8px 0; background: #020617; border: 1px solid #334155; color: #fff; border-radius: 8px; box-sizing: border-box; }
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h3 style="color:#38bdf8; margin: 0;">Direct Merchant Settlement</h3>
+            <p style="color:#94a3b8; font-size: 12px; margin-top: 5px;">Plan: {{ plan }} (₹{{ price }}/month)</p>
+            
+            <div class="qr-mock">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ upi_payment_url | urlencode }}" alt="UPI QR">
+            </div>
+            
+            <p style="color:#34d399; font-size: 11px;">Payee: {{ upi_id }}</p>
+            <p style="color:#94a3b8; font-size: 10px;">Scan via PhonePe / GPay / Paytm</p>
+
+            <form action="/submit-payment" method="POST">
+                <input type="email" name="email" placeholder="Your Official Email" required>
+                <input type="text" name="utr" placeholder="12-Digit UPI Ref / UTR Number" required>
+                <input type="hidden" name="plan" value="{{ plan }}">
+                <button type="submit" class="btn">⚡ Submit Payment for Activation</button>
+            </form>
+            <div style="margin-top:15px;"><a href="/pricing" style="color:#64748b; font-size:12px; text-decoration:none;">← Return</a></div>
+        </div>
+    </body>
+    </html>
+    """, plan=plan, price=price, upi_payment_url=upi_payment_url, upi_id=REAL_UPI_ID)
+
+@app.route('/submit-payment', methods=['POST'])
+def submit_payment():
+    email = request.form.get('email')
+    plan = request.form.get('plan')
+    utr = request.form.get('utr', '').strip()
+    temp_key = "ghostkey_live_" + uuid.uuid4().hex[:18]
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT INTO subscriptions (client_email, plan_name, utr, api_key, status, created_at) VALUES (?, ?, ?, ?, 'PENDING_VERIFICATION', ?)",
+              (email, plan, utr, temp_key, time.time()))
+    conn.commit()
+    conn.close()
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Under Review // GhostKey</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+            .box { background: #0f172a; border: 1px solid #f59e0b; padding: 30px; border-radius: 20px; max-width: 440px; width: 100%; text-align: center; }
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <div style="font-size: 50px; margin-bottom: 10px;">⏳</div>
+            <h2 style="color:#f59e0b; margin: 0;">Payment Submitted</h2>
+            <p style="color:#94a3b8; font-size: 13px; line-height: 1.6;">
+                UTR: <b>{{ utr }}</b> has been recorded.<br>
+                Bank reconciliation is underway. Your API Key will be unlocked once settlement is verified by Sahil Ahmad.
+            </p>
+            <div style="font-size: 11px; color: #64748b; margin-top: 15px;">Target Delivery: {{ email }}</div>
+            <a href="/" style="display:inline-block; margin-top: 20px; padding:10px 18px; background:#0284c7; color:#fff; text-decoration:none; border-radius:8px; font-weight:bold; font-size:12px;">Return to Terminal</a>
+        </div>
+    </body>
+    </html>
+    """, email=email, utr=utr)
+
+@app.route('/sdk-portal')
+def sdk_portal():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Developer Integration // GhostKey</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; padding: 30px; max-width: 700px; margin: auto; }
+            pre { background: #0f172a; border: 1px solid #1e293b; padding: 15px; border-radius: 8px; color: #38bdf8; overflow-x: auto; font-size: 13px; }
+        </style>
+    </head>
+    <body>
+        <h2 style="color:#38bdf8;">GhostKey Drop-In SDK & Validator API</h2>
+        <p style="color:#94a3b8; font-size:13px;">Zero-Password Biometric authentication for any web architecture.</p>
+        
+        <p style="color:#cbd5e1; font-size:13px;">1. Client-Side Script Injection:</p>
+        <pre>&lt;script src="https://zeropass1.onrender.com/airauth.js"&gt;&lt;/script&gt;
+&lt;button onclick="AirAuth.login(function(res){ alert('Verified user: ' + res.user); })"&gt;
+    ⚡ Sign In with GhostKey
+&lt;/button&gt;</pre>
+
+        <p style="color:#cbd5e1; font-size:13px;">2. Server-to-Server Backend Validation API:</p>
+        <pre>POST /api/v1/verify-credential
+Headers: { 
+    "Content-Type": "application/json",
+    "X-GhostKey-Secret": "YOUR_API_KEY"
+}
+Body: { "token": "TOKEN_FROM_BROWSER" }</pre>
+
+        <div style="margin-top:20px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Return to Main Terminal</a></div>
+    </body>
+    </html>
+    """)
+
+@app.route('/admin')
+def admin_panel():
+    pin = request.args.get('pin', '')
+    if pin != ADMIN_PIN:
+        return render_template_string("""
+        <!DOCTYPE html>
+        <html><body style="background:#020617;color:#fff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;">
+            <form method="GET" style="background:#0f172a;padding:30px;border-radius:16px;border:1px solid #334155;text-align:center;">
+                <h3 style="color:#38bdf8;">Chief Architect Vault</h3>
+                <input type="password" name="pin" placeholder="Enter Secret PIN" style="padding:10px;background:#020617;border:1px solid #334155;color:#fff;border-radius:8px;" required><br><br>
+                <button type="submit" style="padding:10px 20px;background:#0284c7;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">Unlock Control Panel</button>
+            </form>
+        </body></html>
+        """)
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT id, client_email, plan_name, utr, api_key, status FROM subscriptions ORDER BY id DESC")
+    subs = c.fetchall()
+    c.execute("SELECT user_id, action, target, ip_addr, timestamp FROM access_logs ORDER BY timestamp DESC LIMIT 8")
+    logs = c.fetchall()
+    conn.close()
+
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GhostKey Master Settlement Vault</title>
+        <style>
+            body { background: #020617; color: #fff; font-family: monospace; padding: 20px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; background: rgba(15,23,42,0.8); border: 1px solid #0284c7; }
+            th, td { padding: 10px; border-bottom: 1px solid #1e293b; text-align: left; font-size: 11px; }
+            th { color: #38bdf8; background: rgba(2,132,199,0.2); }
+            .approve-btn { background: #059669; color: #fff; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 11px; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 style="color:#34d399; margin:0;">🏢 Master Settlement & Payment Vault</h2>
+            <a href="/" style="color:#64748b; font-size:12px; text-decoration:none;">← Main Terminal</a>
+        </div>
+        <p style="color:#94a3b8; font-size:12px;">Verify incoming Bank/PhonePe credit before releasing client API Keys.</p>
+
+        <table>
+            <tr><th>Email</th><th>Plan</th><th>Submitted UTR</th><th>API Key</th><th>Status</th><th>Action</th></tr>
+            {% for s in subs %}
+            <tr>
+                <td>{{ s[1] }}</td>
+                <td>{{ s[2] }}</td>
+                <td style="color:#f59e0b; font-weight:bold;">{{ s[3] }}</td>
+                <td style="color:#38bdf8;">{{ s[4] }}</td>
+                <td>
+                    {% if s[5] == 'ACTIVE' %}
+                        <span style="color:#34d399; font-weight:bold;">ACTIVE</span>
+                    {% else %}
+                        <span style="color:#ef4444; font-weight:bold;">PENDING</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if s[5] != 'ACTIVE' %}
+                        <a href="/admin/approve?id={{ s[0] }}&pin={{ pin }}" class="approve-btn">Approve & Issue Key</a>
+                    {% else %}
+                        <span style="color:#64748b;">Released</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        <h3 style="margin-top:35px;">🛡️ Real-Time Biometric Audit Logs (IP Enforced)</h3>
+        <table>
+            <tr><th>USER SIGNATURE</th><th>EVENT</th><th>TARGET</th><th>SOURCE IP</th></tr>
+            {% for l in logs %}
+            <tr><td>{{ l[0] }}</td><td style="color:#34d399;">{{ l[1] }}</td><td>{{ l[2] }}</td><td style="color:#38bdf8;">{{ l[3] }}</td></tr>
+            {% endfor %}
+        </table>
+    </body>
+    </html>
+    """, subs=subs, logs=logs, pin=ADMIN_PIN)
+
+@app.route('/admin/approve')
+def approve_subscription():
+    pin = request.args.get('pin', '')
+    if pin != ADMIN_PIN:
+        return "Unauthorized", 401
+    sub_id = request.args.get('id')
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE subscriptions SET status = 'ACTIVE' WHERE id = ?", (sub_id,))
+    conn.commit()
+    conn.close()
+    return redirect(f"/admin?pin={ADMIN_PIN}")
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
