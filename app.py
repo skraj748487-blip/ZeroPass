@@ -7,6 +7,25 @@ import hmac
 import hashlib
 import json
 import base64
+import urllib.parse
+
+# PostgreSQL support
+USE_PG = False
+pg_pool = None
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+if DATABASE_URL:
+    try:
+        import psycopg2
+        from psycopg2 import pool
+        # Fix URL prefix if needed
+        clean_db_url = DATABASE_URL
+        if clean_db_url.startswith("postgres://"):
+            clean_db_url = clean_db_url.replace("postgres://", "postgresql://", 1)
+        pg_pool = psycopg2.pool.SimpleConnectionPool(1, 10, clean_db_url)
+        USE_PG = True
+    except Exception as e:
+        USE_PG = False
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
@@ -15,21 +34,41 @@ MASTER_SALT = os.urandom(16).hex()
 REAL_UPI_ID = "7484878440-2@ybl"
 ADMIN_PIN = "7484"
 
-# IP Jail Rate-Limiting Memory Cache
 FAILED_ATTEMPTS = {}
 BLOCKED_IPS = {}
 
-def init_db():
+def get_db():
+    if USE_PG and pg_pool:
+        conn = pg_pool.getconn()
+        return conn, 'PG'
     conn = sqlite3.connect(DB_PATH)
+    return conn, 'SQLITE'
+
+def release_db(conn, db_type):
+    if db_type == 'PG' and pg_pool:
+        pg_pool.putconn(conn)
+    elif db_type == 'SQLITE':
+        conn.close()
+
+def init_db():
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS sessions 
-                 (token TEXT PRIMARY KEY, challenge TEXT, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0, sign_count INTEGER DEFAULT 0)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS access_logs 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, action TEXT, target TEXT, ip_addr TEXT, timestamp REAL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS subscriptions 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, client_email TEXT, plan_name TEXT, utr TEXT, api_key TEXT, status TEXT, created_at REAL)''')
+    if db_type == 'PG':
+        c.execute('''CREATE TABLE IF NOT EXISTS sessions 
+                     (token TEXT PRIMARY KEY, challenge TEXT, status TEXT, user_id TEXT, created_at DOUBLE PRECISION, used INT DEFAULT 0, sign_count INT DEFAULT 0)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS access_logs 
+                     (id SERIAL PRIMARY KEY, user_id TEXT, action TEXT, target TEXT, ip_addr TEXT, timestamp DOUBLE PRECISION)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS subscriptions 
+                     (id SERIAL PRIMARY KEY, client_email TEXT, plan_name TEXT, utr TEXT, api_key TEXT, status TEXT, created_at DOUBLE PRECISION)''')
+    else:
+        c.execute('''CREATE TABLE IF NOT EXISTS sessions 
+                     (token TEXT PRIMARY KEY, challenge TEXT, status TEXT, user_id TEXT, created_at REAL, used INTEGER DEFAULT 0, sign_count INTEGER DEFAULT 0)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS access_logs 
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, action TEXT, target TEXT, ip_addr TEXT, timestamp REAL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS subscriptions 
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT, client_email TEXT, plan_name TEXT, utr TEXT, api_key TEXT, status TEXT, created_at REAL)''')
     conn.commit()
-    conn.close()
+    release_db(conn, db_type)
 
 init_db()
 
@@ -48,7 +87,7 @@ def record_failed_attempt(ip):
     attempts = FAILED_ATTEMPTS.get(ip, 0) + 1
     FAILED_ATTEMPTS[ip] = attempts
     if attempts >= 3:
-        BLOCKED_IPS[ip] = now + 900  # 15 minutes security lockout
+        BLOCKED_IPS[ip] = now + 900
 
 @app.route('/airauth.js')
 def serve_sdk():
@@ -106,13 +145,14 @@ def serve_sdk():
 
 @app.route('/')
 def terminal_display():
+    db_badge = "PERMANENT POSTGRESQL // NEON SECURE" if USE_PG else "SQLITE CACHED NODE"
     return render_template_string("""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>GhostKey Quantum Terminal // Military-Grade</title>
+        <title>GhostKey Quantum Terminal // Enterprise</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <style>
             body { 
@@ -135,9 +175,18 @@ def terminal_display():
                 padding: 8px 16px; 
                 border-radius: 20px; 
                 font-weight: bold; 
-                margin-bottom: 20px; 
+                margin-bottom: 12px; 
                 border: 1px solid #38bdf8;
                 box-shadow: 0 0 15px rgba(2,132,199,0.5);
+            }
+            .db-tag {
+                font-size: 10px;
+                color: #34d399;
+                background: rgba(5,150,105,0.2);
+                border: 1px solid #059669;
+                padding: 4px 10px;
+                border-radius: 12px;
+                margin-bottom: 16px;
             }
             .card { 
                 background: rgba(15, 23, 42, 0.95); 
@@ -193,6 +242,7 @@ def terminal_display():
     </head>
     <body>
         <div class="badge">⚡ ENGINEERED BY SAHIL AHMAD // CHIEF ARCHITECT ⚡</div>
+        <div class="db-tag">🔒 {{ db_badge }}</div>
         
         <div class="card" id="box">
             <h2 style="margin: 0; color: #fff; font-size: 22px;">GhostKey Sovereign Node</h2>
@@ -273,7 +323,7 @@ def terminal_display():
         </script>
     </body>
     </html>
-    """)
+    """, db_badge=db_badge)
 
 @app.route('/api/create-beacon')
 def create_beacon():
@@ -281,22 +331,24 @@ def create_beacon():
     raw_challenge = os.urandom(32)
     challenge = base64.urlsafe_b64encode(raw_challenge).decode('utf-8').rstrip('=')
     
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute("INSERT INTO sessions (token, challenge, status, user_id, created_at, used, sign_count) VALUES (?, ?, ?, ?, ?, 0, 0)", 
+    placeholders = "(%s, %s, %s, %s, %s, 0, 0)" if db_type == 'PG' else "(?, ?, ?, ?, ?, 0, 0)"
+    c.execute(f"INSERT INTO sessions (token, challenge, status, user_id, created_at, used, sign_count) VALUES {placeholders}", 
               (token, challenge, 'BEACON_ACTIVE', None, time.time()))
     conn.commit()
-    conn.close()
+    release_db(conn, db_type)
     return jsonify({"token": token, "challenge": challenge})
 
 @app.route('/air-mobile')
 def air_mobile():
     token = request.args.get('token', '')
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute("SELECT challenge FROM sessions WHERE token = ?", (token,))
+    query = "SELECT challenge FROM sessions WHERE token = %s" if db_type == 'PG' else "SELECT challenge FROM sessions WHERE token = ?"
+    c.execute(query, (token,))
     row = c.fetchone()
-    conn.close()
+    release_db(conn, db_type)
     
     challenge = row[0] if row else ""
 
@@ -369,8 +421,6 @@ def air_mobile():
                     statusDiv.innerText = "Verifying cryptographic proof with server...";
 
                     const clientDataText = new TextDecoder().decode(credential.response.clientDataJSON);
-
-                    // Client Hardware Environment Digest
                     const envHash = btoa(navigator.userAgent.slice(0, 30) + screen.width + "x" + screen.height);
 
                     const response = await fetch('/api/verify-signature', {
@@ -406,7 +456,6 @@ def air_mobile():
 def verify_signature():
     client_ip = request.remote_addr or "127.0.0.1"
 
-    # BRUTE-FORCE RATE LIMITING ENFORCEMENT
     if is_ip_jailed(client_ip):
         return jsonify({"success": False, "error": "IP LOCKED OUT: Security Quarantine Triggered"}), 429
 
@@ -418,64 +467,63 @@ def verify_signature():
     token = data.get('token')
     client_data_raw = data.get('clientDataJSON')
 
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute("SELECT challenge, created_at, used FROM sessions WHERE token = ?", (token,))
+    query = "SELECT challenge, created_at, used FROM sessions WHERE token = %s" if db_type == 'PG' else "SELECT challenge, created_at, used FROM sessions WHERE token = ?"
+    c.execute(query, (token,))
     row = c.fetchone()
     
     if not row:
-        conn.close()
+        release_db(conn, db_type)
         record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Token not found"}), 404
         
     expected_challenge, created_at, used = row[0], row[1], row[2]
 
-    # SINGLE-USE CONSUMPTION AND EXPIRATION WINDOW
     if used == 1:
-        conn.close()
+        release_db(conn, db_type)
         record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Token Already Consumed (Anti-Replay Block)"}), 403
     if (time.time() - created_at) > 25:
-        conn.close()
+        release_db(conn, db_type)
         record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Token Window Expired"}), 403
 
     try:
         client_data = json.loads(client_data_raw)
         received_challenge = client_data.get('challenge', '')
-        
         clean_expected = expected_challenge.rstrip('=').replace('+', '-').replace('/', '_')
         clean_received = received_challenge.rstrip('=').replace('+', '-').replace('/', '_')
 
-        # EXACT CHALLENGE VALIDATION
         if clean_expected != clean_received:
-            conn.close()
+            release_db(conn, db_type)
             record_failed_attempt(client_ip)
             return jsonify({"success": False, "error": "Cryptographic Challenge Mismatch (Attack Neutralized)"}), 403
     except Exception:
-        conn.close()
+        release_db(conn, db_type)
         record_failed_attempt(client_ip)
         return jsonify({"success": False, "error": "Malformed Cryptographic Payload"}), 400
 
-    # Verified - Increment Signature Counter & Commit
-    c.execute("UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1, sign_count = sign_count + 1 WHERE token = ?", ("sahil_master", token))
-    c.execute("INSERT INTO access_logs (user_id, action, target, ip_addr, timestamp) VALUES (?, ?, ?, ?, ?)", 
-              ("sahil_master", "HARDWARE_SILICON_ENCLAVE_SIGNATURE_VERIFIED", "GhostKey Core Substrate", client_ip, time.time()))
+    update_q = "UPDATE sessions SET status = 'VERIFIED', user_id = %s, used = 1, sign_count = sign_count + 1 WHERE token = %s" if db_type == 'PG' else "UPDATE sessions SET status = 'VERIFIED', user_id = ?, used = 1, sign_count = sign_count + 1 WHERE token = ?"
+    c.execute(update_q, ("sahil_master", token))
+
+    log_q = "INSERT INTO access_logs (user_id, action, target, ip_addr, timestamp) VALUES (%s, %s, %s, %s, %s)" if db_type == 'PG' else "INSERT INTO access_logs (user_id, action, target, ip_addr, timestamp) VALUES (?, ?, ?, ?, ?)"
+    c.execute(log_q, ("sahil_master", "HARDWARE_SILICON_ENCLAVE_SIGNATURE_VERIFIED", "GhostKey Core Substrate", client_ip, time.time()))
     conn.commit()
-    conn.close()
+    release_db(conn, db_type)
     
-    # Reset IP failed attempts upon success
     FAILED_ATTEMPTS[client_ip] = 0
     return jsonify({"success": True, "message": "Biometric Handshake Mathematically Approved"})
 
 @app.route('/api/session-status')
 def session_status():
     token = request.args.get('token', '')
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute("SELECT status, user_id FROM sessions WHERE token = ?", (token,))
+    query = "SELECT status, user_id FROM sessions WHERE token = %s" if db_type == 'PG' else "SELECT status, user_id FROM sessions WHERE token = ?"
+    c.execute(query, (token,))
     row = c.fetchone()
-    conn.close()
+    release_db(conn, db_type)
     if row:
         return jsonify({"status": row[0], "user_id": row[1]})
     return jsonify({"status": "NOT_FOUND"})
@@ -488,19 +536,21 @@ def api_verify_credential():
         return jsonify({"valid": False, "error": "Missing token parameter"}), 400
 
     token = data.get('token')
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
     
     if api_key:
-        c.execute("SELECT status FROM subscriptions WHERE api_key = ?", (api_key,))
+        query_sub = "SELECT status FROM subscriptions WHERE api_key = %s" if db_type == 'PG' else "SELECT status FROM subscriptions WHERE api_key = ?"
+        c.execute(query_sub, (api_key,))
         sub = c.fetchone()
         if not sub or sub[0] != 'ACTIVE':
-            conn.close()
+            release_db(conn, db_type)
             return jsonify({"valid": False, "error": "Unauthorized or Inactive API Key"}), 401
 
-    c.execute("SELECT status, user_id, created_at FROM sessions WHERE token = ?", (token,))
+    query_sess = "SELECT status, user_id, created_at FROM sessions WHERE token = %s" if db_type == 'PG' else "SELECT status, user_id, created_at FROM sessions WHERE token = ?"
+    c.execute(query_sess, (token,))
     session = c.fetchone()
-    conn.close()
+    release_db(conn, db_type)
 
     if session and session[0] == 'VERIFIED':
         return jsonify({
@@ -664,12 +714,12 @@ def submit_payment():
     utr = request.form.get('utr', '').strip()
     temp_key = "ghostkey_live_" + uuid.uuid4().hex[:18]
     
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute("INSERT INTO subscriptions (client_email, plan_name, utr, api_key, status, created_at) VALUES (?, ?, ?, ?, 'PENDING_VERIFICATION', ?)",
-              (email, plan, utr, temp_key, time.time()))
+    insert_q = "INSERT INTO subscriptions (client_email, plan_name, utr, api_key, status, created_at) VALUES (%s, %s, %s, %s, 'PENDING_VERIFICATION', %s)" if db_type == 'PG' else "INSERT INTO subscriptions (client_email, plan_name, utr, api_key, status, created_at) VALUES (?, ?, ?, ?, 'PENDING_VERIFICATION', ?)"
+    c.execute(insert_q, (email, plan, utr, temp_key, time.time()))
     conn.commit()
-    conn.close()
+    release_db(conn, db_type)
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -750,13 +800,13 @@ def admin_panel():
         </body></html>
         """)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
     c.execute("SELECT id, client_email, plan_name, utr, api_key, status FROM subscriptions ORDER BY id DESC")
     subs = c.fetchall()
     c.execute("SELECT user_id, action, target, ip_addr, timestamp FROM access_logs ORDER BY timestamp DESC LIMIT 8")
     logs = c.fetchall()
-    conn.close()
+    release_db(conn, db_type)
 
     return render_template_string("""
     <!DOCTYPE html>
@@ -823,11 +873,12 @@ def approve_subscription():
     if pin != ADMIN_PIN:
         return "Unauthorized", 401
     sub_id = request.args.get('id')
-    conn = sqlite3.connect(DB_PATH)
+    conn, db_type = get_db()
     c = conn.cursor()
-    c.execute("UPDATE subscriptions SET status = 'ACTIVE' WHERE id = ?", (sub_id,))
+    query = "UPDATE subscriptions SET status = 'ACTIVE' WHERE id = %s" if db_type == 'PG' else "UPDATE subscriptions SET status = 'ACTIVE' WHERE id = ?"
+    c.execute(query, (sub_id,))
     conn.commit()
-    conn.close()
+    release_db(conn, db_type)
     return redirect(f"/admin?pin={ADMIN_PIN}")
 
 if __name__ == '__main__':
