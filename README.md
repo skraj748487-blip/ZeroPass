@@ -43,3 +43,23 @@ Response:
 
 ## License
 Engineered and maintained by Sahil Ahmad.
+
+---
+
+## 🌐 Autonomous P2P Sovereign Node Setup
+
+Run your own GhostKey verification node and participate in the decentralized ZKP ledger mesh:
+
+### 1. Installation
+git clone https://github.com/skraj748487-blip/ZeroPass.git
+cd ZeroPass
+pip install -e .
+
+### 2. Start Autonomous Node
+python ghostkey_cli.py start-node --port 9000
+
+### 3. Verify Hardware Handshake
+python ghostkey_cli.py test-handshake --port 9000
+
+### 4. Audit Distributed Ledger Integrity
+python ghostkey_cli.py audit-ledger
