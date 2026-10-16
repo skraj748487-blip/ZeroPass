@@ -1,6 +1,6 @@
 """
-GhostKey Sovereign Multi-Node Daemon v2.0
-Autonomous P2P handshake & decentralized ledger broadcast.
+GhostKey Sovereign Multi-Node Daemon v2.1
+Autonomous P2P handshake & decentralized ZKP ledger broadcast.
 """
 
 import socket
@@ -14,13 +14,12 @@ class SovereignNodeDaemon:
         self.host = host
         self.port = port
         self.node_id = node_id
-        self.peers = peers or []  # List of (ip, port) of connected peer nodes
+        self.peers = peers or []
         self.engine = GhostKeyCore(node_id=node_id)
         self.ledger = GhostKeyLedger(node_id=node_id)
         self.running = False
 
     def broadcast_block(self, block_data):
-        """Broadcasts newly minted cryptographic verification blocks to all peers."""
         for peer_ip, peer_port in self.peers:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -30,7 +29,7 @@ class SovereignNodeDaemon:
                 s.sendall(msg.encode('utf-8'))
                 s.close()
             except Exception:
-                pass  # Peer offline, continue mesh relay
+                pass
 
     def handle_peer(self, conn, addr):
         try:
@@ -52,16 +51,17 @@ class SovereignNodeDaemon:
                 payload = req.get('client_data')
                 res = self.engine.verify_hardware_signature(token, payload)
                 
-                # If mathematically valid, mint block and broadcast to network
+                # ZKP Ledger integration
                 if res.get('verified'):
-                    new_block = self.ledger.record_verification(
+                    new_block, salt = self.ledger.record_zkp_verification(
                         user_id=res.get('user_id'),
                         handshake_hash=res.get('handshake_hash'),
                         origin_node=self.node_id
                     )
-                    # Sync with ledger state
                     res["block_index"] = new_block.index
                     res["block_hash"] = new_block.block_hash
+                    res["zk_commitment"] = new_block.verification_data.get("zk_commitment")
+                    
                     threading.Thread(target=self.broadcast_block, args=({
                         "index": new_block.index,
                         "hash": new_block.block_hash,
@@ -72,7 +72,6 @@ class SovereignNodeDaemon:
                 conn.sendall(json.dumps(res).encode('utf-8'))
 
             elif action == 'GOSSIP_BLOCK':
-                # Received block from another node in the mesh
                 incoming_block = req.get('block', {})
                 print(f"[🔗] Received Block {incoming_block.get('index')} from network: {incoming_block.get('hash')[:16]}...")
                 conn.sendall(json.dumps({"status": "BLOCK_ACKNOWLEDGED"}).encode('utf-8'))
