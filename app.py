@@ -717,11 +717,7 @@ PRICING_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
-@app.route("/pricing")
-def pricing_page():
-    resp = make_response(render_template_string(PRICING_HTML))
-    resp.headers["Content-Security-Policy"] = "default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com; frame-src * https://api.razorpay.com;"
-    return resp
+
 @app.route('/checkout')
 def checkout_page():
     plan = request.args.get('plan', 'Business')
@@ -942,3 +938,66 @@ def approve_subscription():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
+
+PRICING_PAGE_HTML = """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GhostKey Pricing</title>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <style>
+    body { background: #0a0d14; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+    .box { max-width: 400px; margin: 40px auto; background: #111625; padding: 30px; border-radius: 12px; border: 1px solid #00ffcc; }
+    h2 { color: #00ffcc; margin-top: 0; }
+    input { width: 90%; padding: 12px; margin: 15px 0; border-radius: 6px; border: 1px solid #333; background: #050811; color: #fff; font-size: 16px; text-align: center; }
+    button { width: 95%; padding: 14px; background: #00ffcc; color: #000; font-weight: bold; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; margin-top: 10px; }
+    .plan-card { border-top: 1px solid #233554; margin-top: 20px; padding-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>GhostKey License Activation</h2>
+    <p style="color:#8892b0;font-size:14px;">Instant automated key issuance via Razorpay</p>
+    <input type="email" id="email" placeholder="Enter your email" value="test@client.com">
+    
+    <div class="plan-card">
+      <h3 style="margin:5px 0;">Developer Sandbox</h3>
+      <p style="color:#00ffcc;font-size:22px;margin:5px 0;">₹1</p>
+      <button onclick="payNow(100, 'Sandbox Test')">Pay ₹1 (Test Live Gate)</button>
+    </div>
+
+    <div class="plan-card">
+      <h3 style="margin:5px 0;">Business Pro</h3>
+      <p style="color:#00ffcc;font-size:22px;margin:5px 0;">₹1,499 / mo</p>
+      <button onclick="payNow(149900, 'Business Pro')">Subscribe ₹1,499</button>
+    </div>
+  </div>
+
+  <script>
+    function payNow(amount, plan) {
+      var emailVal = document.getElementById("email").value;
+      if (!emailVal) { alert("Please enter email"); return; }
+      var rzp = new Razorpay({
+        key: "rzp_live_Tp1pLALckoKQhV",
+        amount: amount,
+        currency: "INR",
+        name: "GhostKey Protocol",
+        description: plan,
+        prefill: { email: emailVal },
+        theme: { color: "#00ffcc" },
+        handler: function(resp) {
+          alert("Payment Successful! ID: " + resp.razorpay_payment_id);
+          window.location.href = "/playground";
+        }
+      });
+      rzp.open();
+    }
+  </script>
+</body>
+</html>"""
+
+@app.route("/pricing")
+def pricing_route():
+    return PRICING_PAGE_HTML
