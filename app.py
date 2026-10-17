@@ -1,3 +1,4 @@
+import razorpay
 from flask import Flask, jsonify, request, render_template_string, Response, redirect, url_for
 import uuid
 import os
@@ -28,6 +29,11 @@ if DATABASE_URL:
         USE_PG = False
 
 app = Flask(__name__)
+
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "rzp_live_Tp1pLALckoKQhV")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "niMaYKWt0Y15UWlu2ojlAJAM")
+rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+
 app.secret_key = os.urandom(32)
 DB_PATH = 'auth_vault.db'
 MASTER_SALT = os.urandom(16).hex()
