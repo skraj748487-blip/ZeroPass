@@ -51,7 +51,7 @@ Engineered and maintained by Sahil Ahmad.
 Run your own GhostKey verification node and participate in the decentralized ZKP ledger mesh:
 
 ### 1. Installation
-git clone https://github.com/skraj748487-blip/ZeroPass.git
+pip install ghostkey-core
 cd ZeroPass
 pip install -e .
 
