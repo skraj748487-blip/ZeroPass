@@ -617,58 +617,9 @@ def playground():
     </html>
     """)
 
-@app.route('/pricing')
+@app.route("/pricing")
 def pricing_page():
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Commercial SaaS Plans // GhostKey</title>
-        <style>
-            body { background: #020617; color: #fff; font-family: monospace; padding: 25px; margin: 0; }
-            .header { text-align: center; margin-bottom: 35px; }
-            .grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; max-width: 1000px; margin: auto; }
-            .plan-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 25px; width: 280px; text-align: center; }
-            .plan-card.featured { border: 2px solid #0284c7; box-shadow: 0 0 25px rgba(2,132,199,0.3); }
-            .price { font-size: 26px; font-weight: bold; color: #38bdf8; margin: 15px 0; }
-            .buy-btn { width: 100%; padding: 12px; background: #0284c7; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block; box-sizing: border-box; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1 style="color:#38bdf8; margin:0 0 5px 0;">GhostKey Enterprise Licensing</h1>
-            <p style="color:#94a3b8; margin:0; font-size:13px;">Pure-Software Hardware-Bound Biometric Authentication</p>
-            <div style="margin-top:10px;"><a href="/" style="color:#64748b; text-decoration:none; font-size:12px;">← Back to Terminal</a></div>
-        </div>
-
-        <div class="grid">
-            <div class="plan-card">
-                <h3>Starter Web</h3>
-                <div class="price">₹499 <span style="font-size:13px; color:#64748b;">/mo</span></div>
-                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ 1 Website Domain<br>✓ 1,000 Biometric Logins<br>✓ Zero Hardware Required</p>
-                <a href="/checkout?plan=Starter&price=499" class="buy-btn">Deploy Starter</a>
-            </div>
-
-            <div class="plan-card featured">
-                <h3 style="color:#38bdf8;">Business API</h3>
-                <div class="price">₹1,499 <span style="font-size:13px; color:#64748b;">/mo</span></div>
-                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ Unlimited Sub-Domains<br>✓ 25,000 Verified Handshakes<br>✓ Anti-Account Sharing Guard<br>✓ Priority API Latency</p>
-                <a href="/checkout?plan=Business&price=1499" class="buy-btn" style="background:#059669;">Get Business API</a>
-            </div>
-
-            <div class="plan-card">
-                <h3>Enterprise Vault</h3>
-                <div class="price">₹4,999 <span style="font-size:13px; color:#64748b;">/mo</span></div>
-                <p style="color:#94a3b8; font-size:12px; line-height:1.7;">✓ Unlimited Auth Cycles<br>✓ Sovereign Cluster Isolation<br>✓ Custom SLA 99.99%</p>
-                <a href="/checkout?plan=Enterprise&price=4999" class="buy-btn">Acquire License</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """)
-
+    return render_template("pricing.html")
 @app.route('/checkout')
 def checkout_page():
     plan = request.args.get('plan', 'Business')
