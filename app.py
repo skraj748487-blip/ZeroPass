@@ -628,7 +628,9 @@ PRICING_HTML = """<!DOCTYPE html>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0d14; color: #fff; margin: 0; padding: 20px; }
     .container { max-width: 900px; margin: 0 auto; text-align: center; }
     h1 { color: #00ffcc; margin-bottom: 8px; }
-    p { color: #8892b0; margin-bottom: 40px; }
+    p { color: #8892b0; margin-bottom: 25px; }
+    .email-box { margin-bottom: 30px; }
+    .email-box input { padding: 12px 16px; width: 80%; max-width: 320px; border-radius: 8px; border: 1px solid #00ffcc; background: #111625; color: #fff; font-size: 1rem; text-align: center; outline: none; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; }
     .card { background: #111625; border: 1px solid #233554; border-radius: 12px; padding: 28px; text-align: left; }
     .card.highlight { border-color: #00ffcc; box-shadow: 0 0 20px rgba(0,255,204,0.15); }
@@ -638,78 +640,88 @@ PRICING_HTML = """<!DOCTYPE html>
     .features { list-style: none; padding: 0; margin: 24px 0; color: #a8b2d1; font-size: 0.95rem; }
     .features li { margin-bottom: 12px; }
     .features li::before { content: "✓ "; color: #00ffcc; }
-    .btn { display: block; width: 100%; padding: 12px; background: #00ffcc; color: #0a0d14; text-align: center; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; font-size: 1rem; }
-    .btn:hover { background: #00cca3; }
-    .btn-test { background: #233554; color: #00ffcc; margin-top: 10px; }
+    .btn { display: block; width: 100%; padding: 14px; background: #00ffcc; color: #0a0d14; text-align: center; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; font-size: 1.05rem; }
+    .btn:active { transform: scale(0.98); }
+    .btn-test { background: #00ffcc; color: #0a0d14; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>GhostKey Enterprise & Cloud Licensing</h1>
-    <p>Decentralized hardware biometric authentication for web, apps & coaching portals.</p>
+    <p>Decentralized hardware biometric authentication for web, apps & portals.</p>
+
+    <div class="email-box">
+      <input type="email" id="userEmail" placeholder="Enter your email for license key" value="client@example.com">
+    </div>
+
     <div class="grid">
-      <div class="card">
+      <div class="card highlight">
         <div class="tier-title">Developer Sandbox</div>
-        <div class="price">₹1 <span>/ test</span></div>
+        <div class="price">₹1 <span>/ live test</span></div>
         <ul class="features">
           <li>Verify Live Payment Flow</li>
           <li>Instant Test License Key</li>
           <li>Full Sandbox Verification</li>
         </ul>
-        <button class="btn btn-test" onclick="payWithRazorpay(100, 'Developer Sandbox')">Test Pay ₹1</button>
+        <button class="btn btn-test" id="btnTest">Pay ₹1 Now</button>
       </div>
-      <div class="card highlight">
+
+      <div class="card">
         <div class="tier-title">Business Pro</div>
         <div class="price">₹1,499 <span>/ month</span></div>
         <ul class="features">
           <li>10,000 Biometric Logins/mo</li>
           <li>Zero SMS OTP Cost</li>
           <li>Hardware Enclave FIDO2 Binding</li>
-          <li>WordPress & Python SDK</li>
         </ul>
-        <button class="btn" onclick="payWithRazorpay(149900, 'Business Pro')">Subscribe Now</button>
-      </div>
-      <div class="card">
-        <div class="tier-title">Coaching & Institute</div>
-        <div class="price">₹4,999 <span>/ month</span></div>
-        <ul class="features">
-          <li>Unlimited Biometric Logins</li>
-          <li>Zero Password Sharing Shield</li>
-          <li>Dedicated P2P Socket Mesh</li>
-          <li>24/7 Priority SLA</li>
-        </ul>
-        <button class="btn" onclick="payWithRazorpay(499900, 'Coaching Enterprise')">Activate Portal</button>
+        <button class="btn" id="btnBiz">Subscribe ₹1,499</button>
       </div>
     </div>
   </div>
+
   <script>
-    function payWithRazorpay(amountInPaise, planName) {
-      const email = prompt("Enter your email for receiving license key:", "customer@example.com");
-      if (!email) return;
-      const options = {
+    function triggerCheckout(amount, plan) {
+      var email = document.getElementById("userEmail").value.trim();
+      if (!email) {
+        alert("Please enter a valid email address.");
+        return;
+      }
+      var options = {
         key: "rzp_live_Tp1pLALckoKQhV",
-        amount: amountInPaise,
+        amount: amount,
         currency: "INR",
         name: "GhostKey Protocol",
-        description: "License: " + planName,
+        description: "License: " + plan,
         prefill: { email: email },
         theme: { color: "#00ffcc" },
         handler: function(response) {
-          alert("Payment Successful! Payment ID: " + response.razorpay_payment_id + "
-Your API License is being issued to " + email);
+          alert("Payment Successful! ID: " + response.razorpay_payment_id);
           window.location.href = "/playground";
         }
       };
-      const rzp = new Razorpay(options);
-      rzp.open();
+      try {
+        var rzp = new Razorpay(options);
+        rzp.open();
+      } catch (err) {
+        alert("Checkout loading error: " + err);
+      }
     }
+
+    document.getElementById("btnTest").addEventListener("click", function() {
+      triggerCheckout(100, "Developer Sandbox");
+    });
+    document.getElementById("btnBiz").addEventListener("click", function() {
+      triggerCheckout(149900, "Business Pro");
+    });
   </script>
 </body>
 </html>"""
 
 @app.route("/pricing")
 def pricing_page():
-    return render_template_string(PRICING_HTML)
+    resp = make_response(render_template_string(PRICING_HTML))
+    resp.headers["Content-Security-Policy"] = "default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com; frame-src * https://api.razorpay.com;"
+    return resp
 @app.route('/checkout')
 def checkout_page():
     plan = request.args.get('plan', 'Business')
